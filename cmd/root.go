@@ -26,8 +26,3 @@ func init() {
 func Execute() error {
 	return rootCmd.Execute()
 }
-
-// AddCommand registers one or more subcommands on the root command.
-func AddCommand(commands ...*cobra.Command) {
-	rootCmd.AddCommand(commands...)
-}
