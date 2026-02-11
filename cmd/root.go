@@ -2,7 +2,6 @@ package cmd
 
 import "github.com/spf13/cobra"
 
-// BuildVersion is injected at build time via -ldflags "-X .../cmd.BuildVersion=...".
 var BuildVersion = "dev"
 
 var rootCmd = &cobra.Command{
@@ -22,7 +21,6 @@ func init() {
 	})
 }
 
-// Execute runs the root command.
 func Execute() error {
 	return rootCmd.Execute()
 }
