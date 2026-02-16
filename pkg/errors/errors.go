@@ -13,6 +13,8 @@ const (
 	CodePermissionDenied   Code = "permission_denied"
 	CodeUnauthenticated    Code = "unauthenticated"
 	CodeNotFound           Code = "not_found"
+	CodeRole               Code = "role_error"
+	CodePermission         Code = "permission_error"
 )
 
 const (

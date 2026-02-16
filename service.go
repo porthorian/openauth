@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	ocrypto "github.com/porthorian/openauth/pkg/crypto"
 	oerrors "github.com/porthorian/openauth/pkg/errors"
 	"github.com/porthorian/openauth/pkg/storage"
@@ -83,7 +84,45 @@ func (s *AuthService) AuthPassword(ctx context.Context, input PasswordInput) (Pr
 		return Principal{}, oerrors.New(oerrors.CodeCredentialsExpired, "credentials have expired", nil)
 	}
 
-	return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "password authentication failed", nil)
+	ok, err := s.hasher.Verify(input.Password, selectedRecord.MaterialHash)
+	if err != nil {
+		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "unable to verify password authentication", &err)
+	}
+
+	if !ok {
+		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "password authentication failed", nil)
+	}
+
+	authenticatedAt := time.Now().UTC()
+	if err := s.authStore.AuthLog.PutAuthLog(ctx, storage.AuthLogRecord{
+		ID:         uuid.NewString(),
+		DateAdded:  time.Now().UTC(),
+		AuthID:     selectedRecord.ID,
+		Subject:    input.UserID,
+		Event:      storage.AuthLogEventUsed,
+		OccurredAt: authenticatedAt,
+	}); err != nil {
+		// TODO log error don't fail function
+	}
+
+	// TODO Configure tenants
+	role, err := s.authdStore.Role.GetRole(ctx, input.UserID, "default")
+	if err != nil {
+		return Principal{}, oerrors.New(oerrors.CodeRole, "failed to get role", &err)
+	}
+
+	perm, err := s.authdStore.Permission.GetPermission(ctx, input.UserID, "default")
+	if err != nil {
+		return Principal{}, oerrors.New(oerrors.CodePermission, "failed to get permission", &err)
+	}
+
+	return Principal{
+		Subject:         input.UserID,
+		Tenant:          "default",
+		RoleMask:        role.RoleMask,
+		PermissionMask:  perm.PermissionMask,
+		AuthenticatedAt: authenticatedAt,
+	}, nil
 }
 
 func (s *AuthService) AuthToken(ctx context.Context, input TokenInput) (Principal, error) {
