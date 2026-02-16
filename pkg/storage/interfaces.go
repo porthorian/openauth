@@ -15,29 +15,22 @@ const (
 	AuthMaterialTypeClientSecret AuthMaterialType = "client_secret"
 )
 
-type TokenFormat string
+type AuthStatus string
 
 const (
-	TokenFormatOpaque TokenFormat = "opaque"
-	TokenFormatJWT    TokenFormat = "jwt"
-)
-
-type TokenUse string
-
-const (
-	TokenUseAccess  TokenUse = "access"
-	TokenUseRefresh TokenUse = "refresh"
-	TokenUseID      TokenUse = "id"
+	StatusActive   AuthStatus = "active"
+	StatusInActive AuthStatus = "inactive"
+	StatusRevoked  AuthStatus = "revoked"
+	StatusExpired  AuthStatus = "expired"
 )
 
 type AuthRecord struct {
 	ID           string
+	Status       AuthStatus
 	DateAdded    time.Time
 	DateModified *time.Time
 	MaterialType AuthMaterialType
 	MaterialHash string
-	TokenFormat  *TokenFormat
-	TokenUse     *TokenUse
 	ExpiresAt    *time.Time
 	RevokedAt    *time.Time
 	Metadata     map[string]string
@@ -93,7 +86,7 @@ type AuthLogRecord struct {
 type AuthStore interface {
 	PutAuth(ctx context.Context, record AuthRecord) error
 	GetAuth(ctx context.Context, id string) (AuthRecord, error)
-	GetAuthByMaterialHash(ctx context.Context, materialType AuthMaterialType, materialHash string) (AuthRecord, error)
+	GetAuths(ctx context.Context, ids []string) ([]AuthRecord, error)
 	DeleteAuth(ctx context.Context, id string) error
 }
 
@@ -128,11 +121,13 @@ type AuthLogStore interface {
 	ListAuthLogsBySubject(ctx context.Context, subject string) ([]AuthLogRecord, error)
 }
 
-type Store interface {
-	AuthStore
-	SubjectAuthStore
-	SessionStore
-	RoleStore
-	PermissionStore
-	AuthLogStore
+type AuthMaterial struct {
+	Auth        AuthStore
+	SubjectAuth SubjectAuthStore
+	AuthLog     AuthLogStore
+}
+
+type AuthdMaterial struct {
+	Role       RoleStore
+	Permission PermissionStore
 }

@@ -3,10 +3,17 @@ package openauth
 import (
 	"context"
 
+	ocrypto "github.com/porthorian/openauth/pkg/crypto"
 	"github.com/porthorian/openauth/pkg/errors"
+	"github.com/porthorian/openauth/pkg/storage"
 )
 
 type Config struct {
+	AuthStore     storage.AuthMaterial
+	AuthdStore    storage.AuthdMaterial
+	Hasher        ocrypto.Hasher
+	PolicyMatrix  storage.PersistencePolicyMatrix
+	DefaultPolicy storage.AuthProfile
 }
 
 type Client struct {

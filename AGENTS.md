@@ -21,6 +21,7 @@ Build a Go authentication library that provides a consistent auth model across a
 - Interchangeable source-of-truth adapters: PostgreSQL and SQLite implement the same persistence contracts and are swappable without auth-layer changes.
 - Redis is cache-only: never a source of truth for identities, roles, permissions, or auth configuration.
 - Policy-driven persistence: auth profiles define source-of-truth ownership, cache behavior, and failure handling through a persistence policy matrix.
+- Focused service dependencies: services compose only required storage contracts and avoid a monolithic storage interface.
 - Credential ownership boundary: implementing applications own username identity mapping; OpenAuth may persist password hash material (no usernames) plus token/session artifacts and authorization policy data.
 - Minimal dependencies: default core should stay lightweight; optional protocol adapters can live in separate packages/modules.
 
@@ -76,6 +77,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 ## Package Planning (Repo Layout)
 - `openauth.go` (root package `openauth`): public entry points and shared options; import path `github.com/porthorian/openauth`.
 - `pkg/session`: session manager, token verifier, key resolver interfaces.
+- `pkg/crypto/password`: password hashing contracts and implementations.
 - `pkg/approach`: strategy interfaces for direct JWT, opaque introspection, and Phantom Token flow.
 - `pkg/authz`: permission constants, role definitions, and bitwise authorization helpers.
 - `pkg/transport/http`: middleware, context extraction, error writer.
@@ -139,6 +141,12 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - `Storage` contracts (source of truth):
   - `AuthStore`, `SubjectAuthStore`, `SessionStore`, `RoleStore`, `PermissionStore`, `AuthLogStore`
   - implemented by `Postgres` and `SQLite` adapters
+- `Password` contracts:
+  - `Hasher`
+  - default implementation currently uses PBKDF2-SHA256 encoded hashes
+- `Storage` dependency bundles:
+  - `AuthMaterial`, `AuthdMaterial`
+  - no monolithic `Store` interface
 - `Cache` contracts (non-authoritative):
   - `TokenCache`, `PrincipalCache`, `PermissionCache`
   - implemented by `Redis` and `Memory` adapters
@@ -298,7 +306,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 1. Confirm v0 auth strategy: JWT, session, or hybrid.
 2. Confirm v0 auth approach strategy: Direct JWT, Opaque Introspection, Phantom Token (all or subset).
 3. Define Phantom Token trust model (issuer, signing keys, audience, TTL).
-4. Define backend-agnostic source-of-truth persistence contracts (`AuthStore`, `SubjectAuthStore`, `SessionStore`, `RoleStore`, `PermissionStore`, `AuthLogStore`).
+4. Define backend-agnostic source-of-truth persistence contracts (`AuthStore`, `SubjectAuthStore`, `SessionStore`, `RoleStore`, `PermissionStore`, `AuthLogStore`) and focused dependency bundles.
 5. Define source-of-truth capability matrix for PostgreSQL and SQLite.
 6. Define cache contracts and cache-role invalidation/TTL strategy.
 7. Choose migration tool and conventions for SQL source-of-truth adapters.

@@ -7,13 +7,17 @@ import (
 type Code string
 
 const (
-	CodeUnknown            Code = "unknown"
 	CodeInvalidCredentials Code = "invalid_credentials"
 	CodeInvalidToken       Code = "invalid_token"
+	CodeCredentialsExpired Code = "credentials_expired"
 	CodePermissionDenied   Code = "permission_denied"
 	CodeUnauthenticated    Code = "unauthenticated"
-	CodeStorageUnavailable Code = "storage_unavailable"
 	CodeNotFound           Code = "not_found"
+)
+
+const (
+	CodeUnknown            Code = "unknown"
+	CodeStorageUnavailable Code = "storage_unavailable"
 	CodeNotImplemented     Code = "not_implemented"
 )
 
@@ -48,11 +52,15 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-func New(code Code, message string) *Error {
-	return &Error{
+func New(code Code, message string, err *error) *Error {
+	newErr := &Error{
 		Code:    code,
 		Message: message,
 	}
+	if err != nil {
+		newErr.Err = *err
+	}
+	return newErr
 }
 
 func Wrap(code Code, message string, err error) *Error {
@@ -69,4 +77,8 @@ func IsCode(err error, code Code) bool {
 		return false
 	}
 	return typed.Code == code
+}
+
+func IsInternalCode(err error) bool {
+	return IsCode(err, CodeUnknown) || IsCode(err, CodeStorageUnavailable) || IsCode(err, CodeNotImplemented)
 }

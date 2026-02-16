@@ -15,6 +15,12 @@ The same auth material type can have different authority and cache behavior depe
 - `PersistencePolicy`
 - `PersistencePolicyMatrix`
 
+## Dependency Bundles
+
+- `AuthMaterialDependencies`
+- `SessionDependencies`
+- `AuthorizationDependencies`
+
 ## Default Profiles
 
 - `password_basic`

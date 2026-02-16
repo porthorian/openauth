@@ -39,8 +39,6 @@ const (
 
 type PersistencePolicy struct {
 	MaterialType           AuthMaterialType
-	TokenFormat            TokenFormat
-	TokenUse               TokenUse
 	Authority              Authority
 	CacheRole              CacheRole
 	PersistInSourceOfTruth bool
@@ -80,9 +78,9 @@ func DefaultPersistencePolicies() map[AuthProfile]PersistencePolicy {
 			FailureMode:            FailureModeClosed,
 		},
 		AuthProfileRefreshRotating: {
-			MaterialType:           AuthMaterialTypeRefreshToken,
-			TokenFormat:            TokenFormatOpaque,
-			TokenUse:               TokenUseRefresh,
+			MaterialType: AuthMaterialTypeRefreshToken,
+			// TokenFormat:            TokenFormatOpaque,
+			// TokenUse:               TokenUseRefresh,
 			Authority:              AuthoritySourceOfTruth,
 			CacheRole:              CacheRoleReadThrough,
 			PersistInSourceOfTruth: true,
@@ -91,9 +89,9 @@ func DefaultPersistencePolicies() map[AuthProfile]PersistencePolicy {
 			FailureMode:            FailureModeClosed,
 		},
 		AuthProfileAccessOpaqueLocal: {
-			MaterialType:           AuthMaterialTypeAccessToken,
-			TokenFormat:            TokenFormatOpaque,
-			TokenUse:               TokenUseAccess,
+			MaterialType: AuthMaterialTypeAccessToken,
+			// TokenFormat:            TokenFormatOpaque,
+			// TokenUse:               TokenUseAccess,
 			Authority:              AuthoritySourceOfTruth,
 			CacheRole:              CacheRoleReadThrough,
 			PersistInSourceOfTruth: true,
@@ -102,9 +100,9 @@ func DefaultPersistencePolicies() map[AuthProfile]PersistencePolicy {
 			FailureMode:            FailureModeClosed,
 		},
 		AuthProfileAccessOpaqueRemote: {
-			MaterialType:           AuthMaterialTypeAccessToken,
-			TokenFormat:            TokenFormatOpaque,
-			TokenUse:               TokenUseAccess,
+			MaterialType: AuthMaterialTypeAccessToken,
+			// TokenFormat:            TokenFormatOpaque,
+			// TokenUse:               TokenUseAccess,
 			Authority:              AuthorityExternal,
 			CacheRole:              CacheRoleIntrospection,
 			PersistInSourceOfTruth: false,
@@ -113,9 +111,9 @@ func DefaultPersistencePolicies() map[AuthProfile]PersistencePolicy {
 			FailureMode:            FailureModeClosed,
 		},
 		AuthProfileAccessJWT: {
-			MaterialType:           AuthMaterialTypeAccessToken,
-			TokenFormat:            TokenFormatJWT,
-			TokenUse:               TokenUseAccess,
+			MaterialType: AuthMaterialTypeAccessToken,
+			// TokenFormat:            TokenFormatJWT,
+			// TokenUse:               TokenUseAccess,
 			Authority:              AuthoritySelfContained,
 			CacheRole:              CacheRoleNone,
 			PersistInSourceOfTruth: false,
