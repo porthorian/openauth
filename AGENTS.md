@@ -38,6 +38,8 @@ Build a Go authentication library that provides a consistent auth model across a
 - `AGENTS.md` is the source of truth for architecture and scope decisions.
 - Any structural change (commands, package layout, contracts, migrations, and architecture boundaries) must update `AGENTS.md` before merge.
 - If project structure and `AGENTS.md` diverge, updating `AGENTS.md` is a required blocking task.
+- File edit workflow: apply inline patches for updates; do not remove/recreate files when modifying existing files.
+- Tooling workflow: do not run git commands.
 
 ## Initial Scope (v0)
 - User identity model and claims model.

@@ -19,6 +19,8 @@ type AuthService struct {
 	defaultPolicy storage.AuthProfile
 }
 
+var _ Authenticator = (*AuthService)(nil)
+
 func NewAuthService(config Config) *AuthService {
 	if config.Hasher == nil {
 		config.Hasher = ocrypto.NewPBKDF2Hasher(ocrypto.DefaultPBKDF2Options())
