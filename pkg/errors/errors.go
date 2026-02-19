@@ -54,15 +54,11 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-func New(code Code, message string, err *error) *Error {
-	newErr := &Error{
+func New(code Code, message string) *Error {
+	return &Error{
 		Code:    code,
 		Message: message,
 	}
-	if err != nil {
-		newErr.Err = *err
-	}
-	return newErr
 }
 
 func Wrap(code Code, message string, err error) *Error {
