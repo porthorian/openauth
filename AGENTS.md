@@ -173,6 +173,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Persistence behavior is policy-driven by auth profile, including cache role, authority boundary, and fail-open/fail-closed strategy.
 - SQL migrations and seeds apply to PostgreSQL and SQLite source-of-truth adapters only.
 - SQL artifacts are adapter-specific and live under `pkg/storage/postgres/...` and `pkg/storage/sqlite/...`.
+- PostgreSQL migration baseline currently starts at `pkg/storage/postgres/migrations/0001_init.sql` and creates the `auth` table used by the active Postgres adapter queries.
 - Redis cache uses TTL and namespace versioning; it never receives authoritative seed data.
 - Support startup policy options: migration-only, seed-only, or migrate-then-seed.
 
