@@ -5,7 +5,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	ocache "github.com/porthorian/openauth/pkg/cache"
 	ocrypto "github.com/porthorian/openauth/pkg/crypto"
 	oerrors "github.com/porthorian/openauth/pkg/errors"
 	"github.com/porthorian/openauth/pkg/storage"
@@ -14,6 +16,8 @@ import (
 type AuthService struct {
 	authStore     storage.AuthMaterial
 	authdStore    storage.AuthdMaterial
+	cacheStore    ocache.Dependencies
+	logger        logr.Logger
 	hasher        ocrypto.Hasher
 	policyMatrix  storage.PersistencePolicyMatrix
 	defaultPolicy storage.AuthProfile
@@ -22,6 +26,8 @@ type AuthService struct {
 var _ Authenticator = (*AuthService)(nil)
 
 func NewAuthService(config Config) *AuthService {
+	logger := resolveLogger(config.Logger)
+
 	if config.Hasher == nil {
 		config.Hasher = ocrypto.NewPBKDF2Hasher(ocrypto.DefaultPBKDF2Options())
 	}
@@ -29,6 +35,8 @@ func NewAuthService(config Config) *AuthService {
 	return &AuthService{
 		authStore:     config.AuthStore,
 		authdStore:    config.AuthdStore,
+		cacheStore:    config.CacheStore,
+		logger:        logger,
 		hasher:        config.Hasher,
 		policyMatrix:  config.PolicyMatrix,
 		defaultPolicy: config.DefaultPolicy,
@@ -81,7 +89,12 @@ func (s *AuthService) AuthPassword(ctx context.Context, input PasswordInput) (Pr
 	if selectedRecord.ExpiresAt != nil && selectedRecord.ExpiresAt.Before(time.Now().UTC()) {
 		selectedRecord.Status = storage.StatusExpired
 		if err := s.authStore.Auth.PutAuth(ctx, *selectedRecord); err != nil {
-			// TODO: log error and alert monitoring system
+			s.logger.Error(
+				err,
+				"failed to persist expired auth status",
+				"auth_id", selectedRecord.ID,
+				"subject", input.UserID,
+			)
 		}
 		return Principal{}, oerrors.New(oerrors.CodeCredentialsExpired, "credentials have expired")
 	}
@@ -104,7 +117,13 @@ func (s *AuthService) AuthPassword(ctx context.Context, input PasswordInput) (Pr
 		Event:      storage.AuthLogEventUsed,
 		OccurredAt: authenticatedAt,
 	}); err != nil {
-		// TODO log error don't fail function
+		s.logger.Error(
+			err,
+			"failed to write auth log record",
+			"auth_id", selectedRecord.ID,
+			"subject", input.UserID,
+			"event", storage.AuthLogEventUsed,
+		)
 	}
 
 	// TODO Configure tenants

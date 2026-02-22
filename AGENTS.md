@@ -110,6 +110,15 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
   - `AuthToken(ctx, input) (Principal, error)`
   - `ValidateToken(ctx, token) (Principal, error)`
 - `Authenticator` is auth-only; token/session revocation flows are handled outside this interface.
+- `Config`:
+  - `AuthStore`, `AuthdStore`, `CacheStore`, `Logger`, `Hasher`, `PolicyMatrix`, `DefaultPolicy`
+  - `Runtime.Storage.Backend` + backend-specific connection settings (starting with PostgreSQL DSN/driver/pool/ping options)
+  - `Runtime.Cache.Backend` + backend-specific cache settings (`memory` and `redis` in v0)
+  - `Runtime.KeyStore.Backend` + backend-specific keystore connection settings
+- `Client`:
+  - `New(auth, config)` initializes configured runtime resources and uses explicit authenticator
+  - `NewDefault(config)` initializes configured runtime resources and builds `AuthService` from resolved config
+  - `Close() error` closes resources initialized from runtime config
 - `PasswordInput`:
   - `UserID`, `Password`, `Metadata`
 - `TokenInput`:

@@ -31,3 +31,9 @@ type PermissionCache interface {
 	GetPermissionMask(ctx context.Context, key string) (uint64, bool, error)
 	DeletePermissionMask(ctx context.Context, key string) error
 }
+
+type Dependencies struct {
+	Token      TokenCache
+	Principal  PrincipalCache
+	Permission PermissionCache
+}
