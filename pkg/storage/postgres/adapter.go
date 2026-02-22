@@ -54,10 +54,15 @@ type Adapter struct {
 }
 
 var (
-	ErrNilDB = errors.New("postgres adapter: db is nil")
+	ErrNilDB          = errors.New("postgres adapter: db is nil")
+	ErrNotImplemented = errors.New("postgres adapter: method not implemented")
 )
 
 var _ storage.AuthStore = (*Adapter)(nil)
+var _ storage.SubjectAuthStore = (*Adapter)(nil)
+var _ storage.AuthLogStore = (*Adapter)(nil)
+var _ storage.RoleStore = (*Adapter)(nil)
+var _ storage.PermissionStore = (*Adapter)(nil)
 
 func NewAdapter(db *sql.DB) *Adapter {
 	return &Adapter{
@@ -337,4 +342,56 @@ func unmarshalMetadata(raw []byte) (map[string]string, error) {
 		return map[string]string{}, nil
 	}
 	return metadata, nil
+}
+
+func (a *Adapter) PutSubjectAuth(ctx context.Context, record storage.SubjectAuthRecord) error {
+	return ErrNotImplemented
+}
+
+func (a *Adapter) ListSubjectAuthBySubject(ctx context.Context, subject string) ([]storage.SubjectAuthRecord, error) {
+	return nil, ErrNotImplemented
+}
+
+func (a *Adapter) ListSubjectAuthByAuthID(ctx context.Context, authID string) ([]storage.SubjectAuthRecord, error) {
+	return nil, ErrNotImplemented
+}
+
+func (a *Adapter) DeleteSubjectAuth(ctx context.Context, id string) error {
+	return ErrNotImplemented
+}
+
+func (a *Adapter) PutAuthLog(ctx context.Context, record storage.AuthLogRecord) error {
+	return ErrNotImplemented
+}
+
+func (a *Adapter) ListAuthLogsByAuthID(ctx context.Context, authID string) ([]storage.AuthLogRecord, error) {
+	return nil, ErrNotImplemented
+}
+
+func (a *Adapter) ListAuthLogsBySubject(ctx context.Context, subject string) ([]storage.AuthLogRecord, error) {
+	return nil, ErrNotImplemented
+}
+
+func (a *Adapter) PutRole(ctx context.Context, record storage.RoleRecord) error {
+	return ErrNotImplemented
+}
+
+func (a *Adapter) GetRole(ctx context.Context, subject string, tenant string) (storage.RoleRecord, error) {
+	return storage.RoleRecord{}, ErrNotImplemented
+}
+
+func (a *Adapter) DeleteRole(ctx context.Context, subject string, tenant string) error {
+	return ErrNotImplemented
+}
+
+func (a *Adapter) PutPermission(ctx context.Context, record storage.PermissionRecord) error {
+	return ErrNotImplemented
+}
+
+func (a *Adapter) GetPermission(ctx context.Context, subject string, tenant string) (storage.PermissionRecord, error) {
+	return storage.PermissionRecord{}, ErrNotImplemented
+}
+
+func (a *Adapter) DeletePermission(ctx context.Context, subject string, tenant string) error {
+	return ErrNotImplemented
 }
