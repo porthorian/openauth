@@ -15,7 +15,7 @@ import (
 
 const (
 	putAuthQuery = `
-INSERT INTO auth (
+INSERT INTO openauth.auth (
   id, status, date_added, date_modified, material_type, material_hash, expires_at, revoked_at, metadata
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (id) DO UPDATE
@@ -32,11 +32,11 @@ SET
 	getAuthQuery = `
 SELECT
   id, status, date_added, date_modified, material_type, material_hash, expires_at, revoked_at, metadata
-FROM auth
+FROM openauth.auth
 WHERE id = $1
 `
 
-	deleteAuthQuery = `DELETE FROM auth WHERE id = $1`
+	deleteAuthQuery = `DELETE FROM openauth.auth WHERE id = $1`
 )
 
 type Adapter struct {
@@ -218,7 +218,7 @@ func (a *Adapter) getAuthsPrepared(size int) (*sql.Stmt, error) {
 	query := fmt.Sprintf(`
 SELECT
   id, status, date_added, date_modified, material_type, material_hash, expires_at, revoked_at, metadata
-FROM auth
+FROM openauth.auth
 WHERE id IN (%s)
 `, strings.Join(placeholders, ", "))
 

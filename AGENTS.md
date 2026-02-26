@@ -100,7 +100,8 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - `pkg/cache/testsuite`: shared cache contract tests for cache adapters.
 - `pkg/storage/migrations`: shared migration conventions and documentation.
 - `pkg/storage/seeds`: shared seed conventions and documentation.
-- `cmd/openauth`: primary CLI entrypoint with `migrate` subcommands for migrations and seeds.
+- `cmd/openauth`: primary CLI entrypoint with `migrate up [steps]`, `migrate down <steps>`, and seed subcommands.
+- OpenAuth CLI migrations must use a dedicated migration version table in the `openauth` schema (default `openauth.schema_migrations`) to avoid conflicts with other applications using `schema_migrations` in the same database.
 - `examples/rest-auth`: runnable REST API authentication example that issues JWTs via `AuthToken`.
 - `pkg/errors`: typed errors and translation helpers.
 
@@ -174,6 +175,8 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Define separate cache contracts and keep cache as non-authoritative cache only.
 - Keep a capability matrix so behavior is consistent where possible and explicitly documented where backend constraints differ.
 - Provide a migration runner abstraction so applications can run schema changes programmatically or via CLI.
+- v0 CLI migration runner uses `golang-migrate` for `cmd/openauth migrate up [steps]` and `cmd/openauth migrate down <steps>`, with file-based migration sources under adapter-specific directories.
+- v0 CLI rollback treats migration-tracking truncate errors as successful when a down migration intentionally drops the schema containing the migration table.
 - Use ordered, versioned migrations for forward schema evolution with deterministic execution.
 - Provide idempotent seed routines that can be re-run safely across environments.
 - Initial seed dataset includes core permissions, default roles, and baseline auth configuration records only.
@@ -182,7 +185,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Persistence behavior is policy-driven by auth profile, including cache role, authority boundary, and fail-open/fail-closed strategy.
 - SQL migrations and seeds apply to PostgreSQL and SQLite source-of-truth adapters only.
 - SQL artifacts are adapter-specific and live under `pkg/storage/postgres/...` and `pkg/storage/sqlite/...`.
-- PostgreSQL migration baseline currently starts at `pkg/storage/postgres/migrations/0001_init.sql` and creates the `auth` table used by the active Postgres adapter queries.
+- PostgreSQL migration baseline currently starts at `pkg/storage/postgres/migrations/0001_init.up.sql` and `pkg/storage/postgres/migrations/0001_init.down.sql`, creates schema `openauth`, and creates `openauth.auth` used by the active Postgres adapter queries.
 - Redis cache uses TTL and namespace versioning; it never receives authoritative seed data.
 - Support startup policy options: migration-only, seed-only, or migrate-then-seed.
 
@@ -303,7 +306,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Permission mask size for v0: `uint32` vs `uint64` (default `uint64`).
 - Source of role definitions: static compile-time constants vs configurable role registry.
 - Storage abstraction depth: minimal session/user interfaces vs richer repository pattern.
-- Migration tooling choice: `golang-migrate`, `goose`, custom runner, or another option.
+- Migration tooling choice: `golang-migrate` for v0 CLI and migration conventions.
 - Source-of-truth capability parity policy across PostgreSQL and SQLite for transactions, indexing, and constraints.
 - Cache role policy details: TTL defaults, key namespacing, invalidation triggers, and fail-open vs fail-closed behavior.
 - Seed ownership model: library-managed baseline only vs consumer-extendable seed hooks.
@@ -321,7 +324,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 4. Define backend-agnostic source-of-truth persistence contracts (`AuthStore`, `SubjectAuthStore`, `SessionStore`, `RoleStore`, `PermissionStore`, `AuthLogStore`) and focused dependency bundles.
 5. Define source-of-truth capability matrix for PostgreSQL and SQLite.
 6. Define cache contracts and cache-role invalidation/TTL strategy.
-7. Choose migration tool and conventions for SQL source-of-truth adapters.
+7. Document and harden `golang-migrate` conventions for SQL source-of-truth adapters.
 8. Define auth-material persistence strategy (raw key vs hashed key + metadata).
 9. Define Basic auth persistence strategy in unified auth records (credential key model without username + hash/salt/params).
 10. Define initial schema objects and first migration set (auth + subject_auth + auth_log + session + authz policy, without username columns).

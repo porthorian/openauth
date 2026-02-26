@@ -1,6 +1,8 @@
 BEGIN;
 
-CREATE TABLE IF NOT EXISTS auth (
+CREATE SCHEMA IF NOT EXISTS openauth;
+
+CREATE TABLE IF NOT EXISTS openauth.auth (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK (status IN ('active', 'inactive', 'revoked', 'expired')),
   date_added TIMESTAMPTZ NOT NULL,
@@ -14,8 +16,8 @@ CREATE TABLE IF NOT EXISTS auth (
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(metadata) = 'object')
 );
 
-CREATE INDEX IF NOT EXISTS idx_auth_status ON auth (status);
-CREATE INDEX IF NOT EXISTS idx_auth_material_type ON auth (material_type);
-CREATE INDEX IF NOT EXISTS idx_auth_expires_at ON auth (expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_auth_status ON openauth.auth (status);
+CREATE INDEX IF NOT EXISTS idx_auth_material_type ON openauth.auth (material_type);
+CREATE INDEX IF NOT EXISTS idx_auth_expires_at ON openauth.auth (expires_at) WHERE expires_at IS NOT NULL;
 
 COMMIT;

@@ -11,4 +11,5 @@ This directory contains shared migration conventions and documentation.
 
 ## Naming
 - Use ordered, forward-only files.
-- Example: `0001_init.sql`, `0002_add_auth_indexes.sql`.
+- `golang-migrate` naming requires directional files per version.
+- Example: `0001_init.up.sql`, `0001_init.down.sql`, `0002_add_auth_indexes.up.sql`, `0002_add_auth_indexes.down.sql`.
