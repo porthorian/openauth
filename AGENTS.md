@@ -100,7 +100,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - `pkg/cache/testsuite`: shared cache contract tests for cache adapters.
 - `pkg/storage/migrations`: shared migration conventions and documentation.
 - `pkg/storage/seeds`: shared seed conventions and documentation.
-- `cmd/openauth`: primary CLI entrypoint with `migrate up [steps]`, `migrate down <steps>`, and seed subcommands.
+- `cmd/openauth`: primary CLI entrypoint with `migrate up [steps]`, `migrate down <steps>`, and `migrate force <version>` subcommands.
 - OpenAuth CLI migrations must use a dedicated migration version table in the `openauth` schema (default `openauth.schema_migrations`) to avoid conflicts with other applications using `schema_migrations` in the same database.
 - `examples/rest-auth`: runnable REST API authentication example that issues JWTs via `AuthToken`.
 - `pkg/errors`: typed errors and translation helpers.
@@ -175,7 +175,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Define separate cache contracts and keep cache as non-authoritative cache only.
 - Keep a capability matrix so behavior is consistent where possible and explicitly documented where backend constraints differ.
 - Provide a migration runner abstraction so applications can run schema changes programmatically or via CLI.
-- v0 CLI migration runner uses `golang-migrate` for `cmd/openauth migrate up [steps]` and `cmd/openauth migrate down <steps>`, with file-based migration sources under adapter-specific directories.
+- v0 CLI migration runner uses `golang-migrate` for `cmd/openauth migrate up [steps]`, `cmd/openauth migrate down <steps>`, and `cmd/openauth migrate force <version>`, with file-based migration sources under adapter-specific directories.
 - v0 CLI rollback treats migration-tracking truncate errors as successful when a down migration intentionally drops the schema containing the migration table.
 - Use ordered, versioned migrations for forward schema evolution with deterministic execution.
 - Provide idempotent seed routines that can be re-run safely across environments.
