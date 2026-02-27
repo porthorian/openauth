@@ -1,23 +1,64 @@
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS openauth;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+CREATE TYPE openauth.status_enum AS ENUM ('active', 'inactive', 'revoked', 'expired');
+CREATE TYPE openauth.material_type_enum AS ENUM ('password', 'access_token', 'refresh_token', 'api_key', 'client_secret');
 CREATE TABLE IF NOT EXISTS openauth.auth (
-  id TEXT PRIMARY KEY,
-  status TEXT NOT NULL CHECK (status IN ('active', 'inactive', 'revoked', 'expired')),
-  date_added TIMESTAMPTZ NOT NULL,
+  id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+  status openauth.status_enum NOT NULL,
+  date_added TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   date_modified TIMESTAMPTZ NULL,
-  material_type TEXT NOT NULL CHECK (
-    material_type IN ('password', 'access_token', 'refresh_token', 'api_key', 'client_secret')
-  ),
+  material_type openauth.material_type_enum NOT NULL,
   material_hash TEXT NOT NULL,
   expires_at TIMESTAMPTZ NULL,
-  revoked_at TIMESTAMPTZ NULL,
-  metadata JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(metadata) = 'object')
+  revoked_at TIMESTAMPTZ NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_auth_status ON openauth.auth (status);
-CREATE INDEX IF NOT EXISTS idx_auth_material_type ON openauth.auth (material_type);
-CREATE INDEX IF NOT EXISTS idx_auth_expires_at ON openauth.auth (expires_at) WHERE expires_at IS NOT NULL;
+CREATE TABLE IF NOT EXISTS openauth.auth_event (
+  id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_id UUID NOT NULL,
+  date_added TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  user_agent TEXT NOT NULL,
+  ip_address INET NOT NULL,
+  login_status BOOLEAN NOT NULL,
+  error_message TEXT NULL,
+  
+  CONSTRAINT fk_auth_event_auth_id
+      FOREIGN KEY (auth_id)
+      REFERENCES openauth.auth (id)
+      ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS openauth.auth_metadata (
+  id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_id UUID NOT NULL,
+  date_added TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  key VARCHAR(255) NOT NULL,
+  value TEXT NOT NULL,
+
+  CONSTRAINT fk_auth_metadata_auth_id
+    FOREIGN KEY (auth_id)
+    REFERENCES openauth.auth (id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS openauth.auth_user (
+  id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_id UUID NOT NULL UNIQUE,
+  user_id UUID NOT NULL,
+  date_added TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_auth_user_user_id
+    FOREIGN KEY (user_id)
+    REFERENCES openauth.auth (id)
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_auth_user_auth_id
+    FOREIGN KEY (auth_id)
+    REFERENCES openauth.auth (id)
+    ON DELETE CASCADE
+);
 
 COMMIT;

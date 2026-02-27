@@ -1,6 +1,5 @@
 BEGIN;
 
-DROP TABLE IF EXISTS openauth.auth;
 DROP SCHEMA IF EXISTS openauth CASCADE;
 
 COMMIT;
