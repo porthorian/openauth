@@ -13,9 +13,8 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	migratedatabase "github.com/golang-migrate/migrate/v4/database"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/lib/pq"
 	"github.com/spf13/cobra"
 )
 
@@ -257,13 +256,17 @@ func newMigrationRunner(cfg migrateConfig) (*migrate.Migrate, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	migrationDatabaseURL, err := migrationDriverURL(databaseURL, cfg.Driver)
+	if err != nil {
+		return nil, "", err
+	}
 
 	sourceURL, err := resolveMigrationsSourceURL(cfg.Driver, cfg.MigrationsPath)
 	if err != nil {
 		return nil, "", err
 	}
 
-	runner, err := migrate.New(sourceURL, databaseURL)
+	runner, err := migrate.New(sourceURL, migrationDatabaseURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("create migrate runner: %w", err)
 	}
@@ -385,15 +388,16 @@ func ensureMigrationsSchemaExists(databaseURL string, driver string, table strin
 	if err != nil {
 		return fmt.Errorf("parse --database-url: %w", err)
 	}
+	parsedURL.Scheme = "postgres"
 	sanitized := migrate.FilterCustomQuery(parsedURL)
 
-	db, err := sql.Open("postgres", sanitized.String())
+	db, err := sql.Open("pgx/v5", sanitized.String())
 	if err != nil {
 		return fmt.Errorf("open database for schema bootstrap: %w", err)
 	}
 	defer db.Close()
 
-	query := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(spec.Schema))
+	query := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", quoteIdentifier(spec.Schema))
 	if _, err := db.Exec(query); err != nil {
 		return fmt.Errorf("ensure migrations schema %q exists: %w", spec.Schema, err)
 	}
@@ -471,19 +475,45 @@ func isDroppedMigrationsTableError(err error, migrationsTable string) bool {
 		return false
 	}
 
-	target := pq.QuoteIdentifier(spec.Table)
+	target := quoteIdentifier(spec.Table)
 	if spec.Schema != "" {
-		target = pq.QuoteIdentifier(spec.Schema) + "." + target
+		target = quoteIdentifier(spec.Schema) + "." + target
 	}
 	if !strings.Contains(query, target) {
 		return false
 	}
 
-	var pqErr *pq.Error
-	if errors.As(dbErr.OrigErr, &pqErr) && string(pqErr.Code) == "3F000" {
+	var sqlStateErr interface{ SQLState() string }
+	if errors.As(dbErr.OrigErr, &sqlStateErr) && sqlStateErr.SQLState() == "3F000" {
 		return true
 	}
 
 	return strings.Contains(strings.ToLower(dbErr.Error()), "schema") &&
 		strings.Contains(strings.ToLower(dbErr.Error()), "does not exist")
+}
+
+func migrationDriverURL(databaseURL string, driver string) (string, error) {
+	if strings.ToLower(strings.TrimSpace(driver)) != "postgres" {
+		return databaseURL, nil
+	}
+
+	parsed, err := url.Parse(databaseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse --database-url: %w", err)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(parsed.Scheme)) {
+	case "postgres", "postgresql", "pgx", "pgx4", "pgx5":
+		parsed.Scheme = "pgx5"
+	case "":
+		return "", errors.New("invalid database URL: expected URL with scheme (for example postgres://...)")
+	default:
+		return "", fmt.Errorf("unsupported postgres database URL scheme %q", parsed.Scheme)
+	}
+
+	return parsed.String(), nil
+}
+
+func quoteIdentifier(value string) string {
+	return `"` + escapeDoubleQuote(value) + `"`
 }

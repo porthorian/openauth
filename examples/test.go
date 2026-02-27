@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"github.com/porthorian/openauth"
 )
 
@@ -16,15 +17,13 @@ func main() {
 		log.Fatal("OPENAUTH_POSTGRES_DSN is required")
 	}
 
-	cacheBackend := openauth.CacheBackend(envOrDefault("OPENAUTH_CACHE_BACKEND", string(openauth.CacheBackendMemory)))
-
 	client, err := openauth.NewDefault(openauth.Config{
 		Logger: logr.Discard(),
 		Runtime: openauth.RuntimeConfig{
 			Storage: openauth.StorageConfig{
 				Backend: openauth.StorageBackendPostgres,
 				Postgres: openauth.PostgresConfig{
-					DriverName:      envOrDefault("OPENAUTH_POSTGRES_DRIVER", "pgx"),
+					DriverName:      "pgx",
 					DSN:             dsn,
 					MaxOpenConns:    10,
 					MaxIdleConns:    5,
@@ -34,15 +33,7 @@ func main() {
 				},
 			},
 			Cache: openauth.CacheConfig{
-				Backend: cacheBackend,
-				Redis: openauth.RedisCacheConfig{
-					Address:     os.Getenv("OPENAUTH_REDIS_ADDR"),
-					Username:    os.Getenv("OPENAUTH_REDIS_USER"),
-					Password:    os.Getenv("OPENAUTH_REDIS_PASSWORD"),
-					Database:    envIntOrDefault("OPENAUTH_REDIS_DB", 0),
-					Namespace:   envOrDefault("OPENAUTH_REDIS_NAMESPACE", "openauth"),
-					DialTimeout: 3 * time.Second,
-				},
+				Backend: openauth.CacheBackendNone,
 			},
 			KeyStore: openauth.KeyStoreConfig{
 				Backend: openauth.KeyStoreBackendNone,
@@ -59,25 +50,14 @@ func main() {
 	}()
 
 	log.Printf("Client initialized with configured runtime: %+v", client)
-}
 
-func envOrDefault(key, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func envIntOrDefault(key string, fallback int) int {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-
-	parsed, err := strconv.Atoi(value)
+	princ, err := client.AuthPassword(context.Background(), openauth.PasswordInput{
+		UserID:   uuid.NewString(),
+		Password: "test1234",
+	})
 	if err != nil {
-		return fallback
+		log.Printf("AuthPassword error: %v", err)
+		return
 	}
-	return parsed
+	log.Printf("AuthPassword result: %+v", princ)
 }

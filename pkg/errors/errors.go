@@ -36,12 +36,11 @@ func (e *Error) Error() string {
 		return ""
 	}
 
-	if e.Message != "" {
-		return e.Message
-	}
+	message := e.Message
 
 	if e.Err != nil {
-		return e.Err.Error()
+		message += ": " + e.Err.Error()
+		return message
 	}
 
 	return string(e.Code)

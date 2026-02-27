@@ -175,7 +175,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Define separate cache contracts and keep cache as non-authoritative cache only.
 - Keep a capability matrix so behavior is consistent where possible and explicitly documented where backend constraints differ.
 - Provide a migration runner abstraction so applications can run schema changes programmatically or via CLI.
-- v0 CLI migration runner uses `golang-migrate` for `cmd/openauth migrate up [steps]`, `cmd/openauth migrate down <steps>`, and `cmd/openauth migrate force <version>`, with file-based migration sources under adapter-specific directories.
+- v0 CLI migration runner uses `golang-migrate` with the PostgreSQL `pgx/v5` database backend for `cmd/openauth migrate up [steps]`, `cmd/openauth migrate down <steps>`, and `cmd/openauth migrate force <version>`, with file-based migration sources under adapter-specific directories.
 - v0 CLI rollback treats migration-tracking truncate errors as successful when a down migration intentionally drops the schema containing the migration table.
 - Use ordered, versioned migrations for forward schema evolution with deterministic execution.
 - Provide idempotent seed routines that can be re-run safely across environments.
@@ -185,7 +185,9 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Persistence behavior is policy-driven by auth profile, including cache role, authority boundary, and fail-open/fail-closed strategy.
 - SQL migrations and seeds apply to PostgreSQL and SQLite source-of-truth adapters only.
 - SQL artifacts are adapter-specific and live under `pkg/storage/postgres/...` and `pkg/storage/sqlite/...`.
+- SQL migration files are the schema source of truth; when Go storage interfaces/adapters drift, update Go to match SQL rather than editing SQL to fit Go.
 - PostgreSQL migration baseline currently starts at `pkg/storage/postgres/migrations/0001_init.up.sql` and `pkg/storage/postgres/migrations/0001_init.down.sql`, creates schema `openauth`, and creates `openauth.auth` used by the active Postgres adapter queries.
+- PostgreSQL adapter construction is fail-fast: `pkg/storage/postgres.NewAdapter` prepares fixed auth statements at initialization and returns an error if preparation fails.
 - Redis cache uses TTL and namespace versioning; it never receives authoritative seed data.
 - Support startup policy options: migration-only, seed-only, or migrate-then-seed.
 

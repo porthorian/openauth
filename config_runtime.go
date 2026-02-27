@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	memorycache "github.com/porthorian/openauth/pkg/cache/memory"
 	rediscache "github.com/porthorian/openauth/pkg/cache/redis"
 	"github.com/porthorian/openauth/pkg/storage/postgres"
@@ -236,7 +237,11 @@ func initializePostgres(ctx context.Context, config Config) (func() error, Confi
 		return nil, Config{}, fmt.Errorf("openauth config: failed to ping postgres database: %w", err)
 	}
 
-	adapter := postgres.NewAdapter(db)
+	adapter, err := postgres.NewAdapter(db)
+	if err != nil {
+		_ = db.Close()
+		return nil, Config{}, fmt.Errorf("openauth config: failed to initialize postgres adapter: %w", err)
+	}
 
 	if config.AuthStore.Auth == nil {
 		config.AuthStore.Auth = adapter

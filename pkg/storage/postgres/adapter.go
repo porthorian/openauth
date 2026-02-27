@@ -1,61 +1,146 @@
 package postgres
 
 import (
-	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/porthorian/openauth/pkg/storage"
-)
-
-const (
-	putAuthQuery = `
-INSERT INTO openauth.auth (
-  id, status, date_added, date_modified, material_type, material_hash, expires_at, revoked_at, metadata
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (id) DO UPDATE
-SET
-  status = EXCLUDED.status,
-  date_modified = EXCLUDED.date_modified,
-  material_type = EXCLUDED.material_type,
-  material_hash = EXCLUDED.material_hash,
-  expires_at = EXCLUDED.expires_at,
-  revoked_at = EXCLUDED.revoked_at,
-  metadata = EXCLUDED.metadata
-`
-
-	getAuthQuery = `
-SELECT
-  id, status, date_added, date_modified, material_type, material_hash, expires_at, revoked_at, metadata
-FROM openauth.auth
-WHERE id = $1
-`
-
-	deleteAuthQuery = `DELETE FROM openauth.auth WHERE id = $1`
 )
 
 type Adapter struct {
 	db *sql.DB
 
-	prepareOnce sync.Once
-	prepareErr  error
+	stmts preparedStatements
+}
 
-	putAuthStmt    *sql.Stmt
-	getAuthStmt    *sql.Stmt
-	deleteAuthStmt *sql.Stmt
+type preparedStatements struct {
+	putAuth    *sql.Stmt
+	getAuth    *sql.Stmt
+	deleteAuth *sql.Stmt
 
-	getAuthsMu    sync.Mutex
-	getAuthsStmts map[int]*sql.Stmt
+	deleteAuthMetadata *sql.Stmt
+	putAuthMetadata    *sql.Stmt
+	getAuthMetadata    *sql.Stmt
+
+	putAuthUser          *sql.Stmt
+	listAuthUserByUserID *sql.Stmt
+	listAuthUserByAuthID *sql.Stmt
+	deleteAuthUserByID   *sql.Stmt
+
+	putAuthEvent           *sql.Stmt
+	listAuthEventByAuthID  *sql.Stmt
+	listAuthEventBySubject *sql.Stmt
+
+	getAuthsMu     sync.Mutex
+	getAuthsBySize map[int]*sql.Stmt
+}
+
+type prepareStatementSpec struct {
+	label  string
+	query  string
+	assign func(*preparedStatements, *sql.Stmt)
+}
+
+var fixedPrepareStatementSpecs = []prepareStatementSpec{
+	{
+		label: "put auth",
+		query: putAuthQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.putAuth = stmt
+		},
+	},
+	{
+		label: "get auth",
+		query: getAuthQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.getAuth = stmt
+		},
+	},
+	{
+		label: "delete auth",
+		query: deleteAuthQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.deleteAuth = stmt
+		},
+	},
+	{
+		label: "delete auth metadata",
+		query: deleteAuthMetadataQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.deleteAuthMetadata = stmt
+		},
+	},
+	{
+		label: "put auth metadata",
+		query: putAuthMetadataQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.putAuthMetadata = stmt
+		},
+	},
+	{
+		label: "get auth metadata",
+		query: getAuthMetadataQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.getAuthMetadata = stmt
+		},
+	},
+	{
+		label: "put auth user",
+		query: putAuthUserQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.putAuthUser = stmt
+		},
+	},
+	{
+		label: "list auth user by user_id",
+		query: listAuthUserByUserIDQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.listAuthUserByUserID = stmt
+		},
+	},
+	{
+		label: "list auth user by auth_id",
+		query: listAuthUserByAuthIDQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.listAuthUserByAuthID = stmt
+		},
+	},
+	{
+		label: "delete auth user by id",
+		query: deleteAuthUserQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.deleteAuthUserByID = stmt
+		},
+	},
+	{
+		label: "put auth event",
+		query: putAuthEventQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.putAuthEvent = stmt
+		},
+	},
+	{
+		label: "list auth event by auth_id",
+		query: listAuthEventByAuthIDQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.listAuthEventByAuthID = stmt
+		},
+	},
+	{
+		label: "list auth event by subject",
+		query: listAuthEventBySubjectQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.listAuthEventBySubject = stmt
+		},
+	},
 }
 
 var (
-	ErrNilDB          = errors.New("postgres adapter: db is nil")
-	ErrNotImplemented = errors.New("postgres adapter: method not implemented")
+	ErrNilDB                 = errors.New("postgres adapter: db is nil")
+	ErrAdapterNotInitialized = errors.New("postgres adapter: adapter not initialized")
+	ErrNotImplemented        = errors.New("postgres adapter: method not implemented")
 )
 
 var _ storage.AuthStore = (*Adapter)(nil)
@@ -64,101 +149,20 @@ var _ storage.AuthLogStore = (*Adapter)(nil)
 var _ storage.RoleStore = (*Adapter)(nil)
 var _ storage.PermissionStore = (*Adapter)(nil)
 
-func NewAdapter(db *sql.DB) *Adapter {
-	return &Adapter{
-		db:            db,
-		getAuthsStmts: map[int]*sql.Stmt{},
-	}
-}
-
-func (a *Adapter) PutAuth(ctx context.Context, record storage.AuthRecord) error {
-	if err := a.ensurePrepared(); err != nil {
-		return err
+func NewAdapter(db *sql.DB) (*Adapter, error) {
+	adapter := &Adapter{
+		db: db,
+		stmts: preparedStatements{
+			getAuthsBySize: map[int]*sql.Stmt{},
+		},
 	}
 
-	dateAdded := record.DateAdded
-	if dateAdded.IsZero() {
-		dateAdded = time.Now().UTC()
-	}
-
-	dateModified := time.Now().UTC()
-	if record.DateModified != nil {
-		dateModified = record.DateModified.UTC()
-	}
-
-	metadata, err := marshalMetadata(record.Metadata)
-	if err != nil {
-		return err
-	}
-
-	_, err = a.putAuthStmt.ExecContext(
-		ctx,
-		record.ID,
-		string(record.Status),
-		dateAdded,
-		dateModified,
-		string(record.MaterialType),
-		record.MaterialHash,
-		record.ExpiresAt,
-		record.RevokedAt,
-		metadata,
-	)
-	return err
-}
-
-func (a *Adapter) GetAuth(ctx context.Context, id string) (storage.AuthRecord, error) {
-	if err := a.ensurePrepared(); err != nil {
-		return storage.AuthRecord{}, err
-	}
-
-	row := a.getAuthStmt.QueryRowContext(ctx, id)
-	return scanAuth(row)
-}
-
-func (a *Adapter) GetAuths(ctx context.Context, ids []string) ([]storage.AuthRecord, error) {
-	if len(ids) == 0 {
-		return []storage.AuthRecord{}, nil
-	}
-
-	stmt, err := a.getAuthsPrepared(len(ids))
-	if err != nil {
+	if err := adapter.prepareStatements(); err != nil {
+		_ = adapter.Close()
 		return nil, err
 	}
 
-	args := make([]any, len(ids))
-	for i := range ids {
-		args[i] = ids[i]
-	}
-
-	rows, err := stmt.QueryContext(ctx, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	records := make([]storage.AuthRecord, 0, len(ids))
-	for rows.Next() {
-		record, scanErr := scanAuth(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		records = append(records, record)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return records, nil
-}
-
-func (a *Adapter) DeleteAuth(ctx context.Context, id string) error {
-	if err := a.ensurePrepared(); err != nil {
-		return err
-	}
-
-	_, err := a.deleteAuthStmt.ExecContext(ctx, id)
-	return err
+	return adapter, nil
 }
 
 func (a *Adapter) Close() error {
@@ -168,97 +172,83 @@ func (a *Adapter) Close() error {
 
 	var errs []error
 
-	if a.putAuthStmt != nil {
-		if err := a.putAuthStmt.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if a.getAuthStmt != nil {
-		if err := a.getAuthStmt.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if a.deleteAuthStmt != nil {
-		if err := a.deleteAuthStmt.Close(); err != nil {
-			errs = append(errs, err)
-		}
+	if err := closeStatements(
+		a.stmts.putAuth,
+		a.stmts.getAuth,
+		a.stmts.deleteAuth,
+		a.stmts.deleteAuthMetadata,
+		a.stmts.putAuthMetadata,
+		a.stmts.getAuthMetadata,
+		a.stmts.putAuthUser,
+		a.stmts.listAuthUserByUserID,
+		a.stmts.listAuthUserByAuthID,
+		a.stmts.deleteAuthUserByID,
+		a.stmts.putAuthEvent,
+		a.stmts.listAuthEventByAuthID,
+		a.stmts.listAuthEventBySubject,
+	); err != nil {
+		errs = append(errs, err)
 	}
 
-	a.getAuthsMu.Lock()
-	for _, stmt := range a.getAuthsStmts {
-		if stmt == nil {
-			continue
-		}
-		if err := stmt.Close(); err != nil {
-			errs = append(errs, err)
-		}
+	a.stmts.getAuthsMu.Lock()
+	dynamicStmts := make([]*sql.Stmt, 0, len(a.stmts.getAuthsBySize))
+	for _, stmt := range a.stmts.getAuthsBySize {
+		dynamicStmts = append(dynamicStmts, stmt)
 	}
-	a.getAuthsMu.Unlock()
+	a.stmts.getAuthsBySize = map[int]*sql.Stmt{}
+	a.stmts.getAuthsMu.Unlock()
+
+	if err := closeStatements(dynamicStmts...); err != nil {
+		errs = append(errs, err)
+	}
 
 	return errors.Join(errs...)
 }
 
-func (a *Adapter) getAuthsPrepared(size int) (*sql.Stmt, error) {
-	if size <= 0 {
-		return nil, nil
-	}
-
-	a.getAuthsMu.Lock()
-	defer a.getAuthsMu.Unlock()
-
-	if stmt, ok := a.getAuthsStmts[size]; ok {
-		return stmt, nil
-	}
-
-	placeholders := make([]string, size)
-	for i := 0; i < size; i++ {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-	}
-
-	query := fmt.Sprintf(`
-SELECT
-  id, status, date_added, date_modified, material_type, material_hash, expires_at, revoked_at, metadata
-FROM openauth.auth
-WHERE id IN (%s)
-`, strings.Join(placeholders, ", "))
-
-	stmt, err := a.db.Prepare(query)
+func (a *Adapter) prepareStatements() (err error) {
+	db, err := a.requireDB()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	a.getAuthsStmts[size] = stmt
-	return stmt, nil
+	prepared := make([]*sql.Stmt, 0, len(fixedPrepareStatementSpecs))
+	defer func() {
+		if err != nil {
+			_ = closeStatements(prepared...)
+		}
+	}()
+
+	for _, spec := range fixedPrepareStatementSpecs {
+		stmt, prepErr := db.Prepare(spec.query)
+		if prepErr != nil {
+			err = fmt.Errorf("postgres adapter: prepare %s statement: %w", spec.label, prepErr)
+			return err
+		}
+		prepared = append(prepared, stmt)
+		spec.assign(&a.stmts, stmt)
+	}
+	return nil
 }
 
-func (a *Adapter) ensurePrepared() error {
-	a.prepareOnce.Do(func() {
-		db, err := a.requireDB()
-		if err != nil {
-			a.prepareErr = err
-			return
-		}
+func (a *Adapter) requirePreparedStatements() error {
+	if _, err := a.requireDB(); err != nil {
+		return err
+	}
 
-		a.putAuthStmt, err = db.Prepare(putAuthQuery)
-		if err != nil {
-			a.prepareErr = err
-			return
-		}
+	if a.stmts.putAuth == nil || a.stmts.getAuth == nil || a.stmts.deleteAuth == nil {
+		return ErrAdapterNotInitialized
+	}
+	if a.stmts.deleteAuthMetadata == nil || a.stmts.putAuthMetadata == nil || a.stmts.getAuthMetadata == nil {
+		return ErrAdapterNotInitialized
+	}
+	if a.stmts.putAuthUser == nil || a.stmts.listAuthUserByUserID == nil || a.stmts.listAuthUserByAuthID == nil || a.stmts.deleteAuthUserByID == nil {
+		return ErrAdapterNotInitialized
+	}
+	if a.stmts.putAuthEvent == nil || a.stmts.listAuthEventByAuthID == nil || a.stmts.listAuthEventBySubject == nil {
+		return ErrAdapterNotInitialized
+	}
 
-		a.getAuthStmt, err = db.Prepare(getAuthQuery)
-		if err != nil {
-			a.prepareErr = err
-			return
-		}
-
-		a.deleteAuthStmt, err = db.Prepare(deleteAuthQuery)
-		if err != nil {
-			a.prepareErr = err
-			return
-		}
-	})
-
-	return a.prepareErr
+	return nil
 }
 
 func (a *Adapter) requireDB() (*sql.DB, error) {
@@ -272,126 +262,15 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-func scanAuth(s scanner) (storage.AuthRecord, error) {
-	var (
-		record       storage.AuthRecord
-		status       string
-		materialType string
-		dateModified sql.NullTime
-		expiresAt    sql.NullTime
-		revokedAt    sql.NullTime
-		metadataJSON []byte
-	)
-
-	if err := s.Scan(
-		&record.ID,
-		&status,
-		&record.DateAdded,
-		&dateModified,
-		&materialType,
-		&record.MaterialHash,
-		&expiresAt,
-		&revokedAt,
-		&metadataJSON,
-	); err != nil {
-		return storage.AuthRecord{}, err
+func closeStatements(stmts ...*sql.Stmt) error {
+	var errs []error
+	for _, stmt := range stmts {
+		if stmt == nil {
+			continue
+		}
+		if err := stmt.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
-
-	record.Status = storage.AuthStatus(status)
-	record.MaterialType = storage.AuthMaterialType(materialType)
-	if dateModified.Valid {
-		t := dateModified.Time.UTC()
-		record.DateModified = &t
-	}
-	if expiresAt.Valid {
-		t := expiresAt.Time.UTC()
-		record.ExpiresAt = &t
-	}
-	if revokedAt.Valid {
-		t := revokedAt.Time.UTC()
-		record.RevokedAt = &t
-	}
-
-	metadata, err := unmarshalMetadata(metadataJSON)
-	if err != nil {
-		return storage.AuthRecord{}, err
-	}
-	record.Metadata = metadata
-
-	return record, nil
-}
-
-func marshalMetadata(metadata map[string]string) ([]byte, error) {
-	if metadata == nil {
-		return []byte("{}"), nil
-	}
-	return json.Marshal(metadata)
-}
-
-func unmarshalMetadata(raw []byte) (map[string]string, error) {
-	if len(raw) == 0 {
-		return map[string]string{}, nil
-	}
-
-	metadata := map[string]string{}
-	if err := json.Unmarshal(raw, &metadata); err != nil {
-		return nil, err
-	}
-
-	if metadata == nil {
-		return map[string]string{}, nil
-	}
-	return metadata, nil
-}
-
-func (a *Adapter) PutSubjectAuth(ctx context.Context, record storage.SubjectAuthRecord) error {
-	return ErrNotImplemented
-}
-
-func (a *Adapter) ListSubjectAuthBySubject(ctx context.Context, subject string) ([]storage.SubjectAuthRecord, error) {
-	return nil, ErrNotImplemented
-}
-
-func (a *Adapter) ListSubjectAuthByAuthID(ctx context.Context, authID string) ([]storage.SubjectAuthRecord, error) {
-	return nil, ErrNotImplemented
-}
-
-func (a *Adapter) DeleteSubjectAuth(ctx context.Context, id string) error {
-	return ErrNotImplemented
-}
-
-func (a *Adapter) PutAuthLog(ctx context.Context, record storage.AuthLogRecord) error {
-	return ErrNotImplemented
-}
-
-func (a *Adapter) ListAuthLogsByAuthID(ctx context.Context, authID string) ([]storage.AuthLogRecord, error) {
-	return nil, ErrNotImplemented
-}
-
-func (a *Adapter) ListAuthLogsBySubject(ctx context.Context, subject string) ([]storage.AuthLogRecord, error) {
-	return nil, ErrNotImplemented
-}
-
-func (a *Adapter) PutRole(ctx context.Context, record storage.RoleRecord) error {
-	return ErrNotImplemented
-}
-
-func (a *Adapter) GetRole(ctx context.Context, subject string, tenant string) (storage.RoleRecord, error) {
-	return storage.RoleRecord{}, ErrNotImplemented
-}
-
-func (a *Adapter) DeleteRole(ctx context.Context, subject string, tenant string) error {
-	return ErrNotImplemented
-}
-
-func (a *Adapter) PutPermission(ctx context.Context, record storage.PermissionRecord) error {
-	return ErrNotImplemented
-}
-
-func (a *Adapter) GetPermission(ctx context.Context, subject string, tenant string) (storage.PermissionRecord, error) {
-	return storage.PermissionRecord{}, ErrNotImplemented
-}
-
-func (a *Adapter) DeletePermission(ctx context.Context, subject string, tenant string) error {
-	return ErrNotImplemented
+	return errors.Join(errs...)
 }
