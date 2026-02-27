@@ -168,6 +168,40 @@ func newMigrateCommand() *cobra.Command {
 		},
 	})
 
+	migrateCmd.AddCommand(&cobra.Command{
+		Use:   "force <version>",
+		Short: "Force-set migration version (-1 for nil version)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			version, err := parseForceVersionArg(args[0])
+			if err != nil {
+				return err
+			}
+
+			runner, _, err := newMigrationRunner(cfg)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if closeErr := closeMigrationRunner(runner); closeErr != nil {
+					cmd.PrintErrf("warning: failed to close migration runner cleanly: %v\n", closeErr)
+				}
+			}()
+
+			if err := runner.Force(version); err != nil {
+				return fmt.Errorf("force migration version: %w", err)
+			}
+
+			if version == -1 {
+				cmd.Println("Forced migration version to -1 (no version).")
+				return nil
+			}
+
+			cmd.Printf("Forced migration version to %d.\n", version)
+			return nil
+		},
+	})
+
 	return migrateCmd
 }
 
@@ -200,6 +234,14 @@ func parseMigrationStepsArg(args []string) (int, bool, error) {
 	}
 
 	return steps, true, nil
+}
+
+func parseForceVersionArg(arg string) (int, error) {
+	version, err := strconv.Atoi(strings.TrimSpace(arg))
+	if err != nil || version < -1 {
+		return 0, fmt.Errorf("invalid force version %q: expected an integer >= -1", arg)
+	}
+	return version, nil
 }
 
 func newMigrationRunner(cfg migrateConfig) (*migrate.Migrate, string, error) {
