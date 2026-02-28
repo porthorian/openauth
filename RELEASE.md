@@ -18,7 +18,7 @@
 - Confirm roadmap and milestone status.
 - Ensure tests pass (`go test ./...`).
 - Ensure examples compile and run.
-- Confirm public auth contract docs match code (`AuthPassword`, `AuthToken`, `ValidateToken`, `PasswordInput`, `TokenInput`).
+- Confirm public auth contract docs match code (`Authorize`, `CreateAuth`, `ValidateToken`, `AuthInput`, `InputType`, `CreateAuthInput`).
 - Update `CHANGELOG` with categorized entries:
 - Added
 - Changed

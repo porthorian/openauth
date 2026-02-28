@@ -102,13 +102,13 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - `pkg/storage/seeds`: shared seed conventions and documentation.
 - `cmd/openauth`: primary CLI entrypoint with `migrate up [steps]`, `migrate down <steps>`, and `migrate force <version>` subcommands.
 - OpenAuth CLI migrations must use a dedicated migration version table in the `openauth` schema (default `openauth.schema_migrations`) to avoid conflicts with other applications using `schema_migrations` in the same database.
-- `examples/rest-auth`: runnable REST API authentication example that issues JWTs via `AuthToken`.
+- `examples/test.go`: runnable auth example that initializes runtime dependencies and calls `Authorize` with `AuthInput`.
 - `pkg/errors`: typed errors and translation helpers.
 
 ## API Shape (Draft)
 - `Authenticator` interface:
-  - `AuthPassword(ctx, input) (Principal, error)`
-  - `AuthToken(ctx, input) (Principal, error)`
+  - `Authorize(ctx, input) (Principal, error)`
+  - `CreateAuth(ctx, input) error`
   - `ValidateToken(ctx, token) (Principal, error)`
 - `Authenticator` is auth-only; token/session revocation flows are handled outside this interface.
 - `Config`:
@@ -120,12 +120,14 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
   - `New(auth, config)` initializes configured runtime resources and uses explicit authenticator
   - `NewDefault(config)` initializes configured runtime resources and builds `AuthService` from resolved config
   - `Close() error` closes resources initialized from runtime config
-- `PasswordInput`:
-  - `UserID`, `Password`, `Metadata`
-- `TokenInput`:
-  - `UserID`, `Token`, `Metadata`
-- `PasswordInput.UserID` is transient input for verifier callbacks and is never persisted by OpenAuth storage adapters.
-- `PasswordInput.Password` is never persisted in plaintext; only derived password hash material (hash/salt/params) may be stored.
+- `AuthInput`:
+  - `UserID`, `Type`, `Value`, `Metadata`
+- `InputType`:
+  - `password`, `token`
+- `CreateAuthInput`:
+  - `UserID`, `Value`, `ExpiresAt`, `Metadata`
+- `AuthInput.UserID` is transient input for verifier callbacks and is never persisted by OpenAuth storage adapters.
+- `AuthInput.Value` is never persisted in plaintext; for password auth, only derived password hash material (hash/salt/params) may be stored.
 - `Principal`:
   - `Subject`, `Tenant`, `RoleMask`, `PermissionMask`, `Claims`, `AuthenticatedAt`
 - `AuthRecord`:
@@ -152,6 +154,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
   - `Policy(profile) (PersistencePolicy, bool)`
 - `Storage` contracts (source of truth):
   - `AuthStore`, `SubjectAuthStore`, `SessionStore`, `RoleStore`, `PermissionStore`, `AuthLogStore`
+  - optional `AuthMaterialTransactor` for atomic multi-store auth writes (`WithAuthMaterialTx`)
   - implemented by `Postgres` and `SQLite` adapters
 - `Password` contracts:
   - `Hasher`

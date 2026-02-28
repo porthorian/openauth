@@ -76,6 +76,21 @@ func (a *Adapter) PutAuthLog(ctx context.Context, record storage.AuthLogRecord) 
 
 	errorMessage := encodeAuthEventErrorMessage(record)
 
+	if a.tx != nil {
+		stmt := a.tx.StmtContext(ctx, a.stmts.putAuthEvent)
+		defer stmt.Close()
+		_, err := stmt.ExecContext(
+			ctx,
+			record.AuthID,
+			dateAdded,
+			userAgent,
+			ipAddress,
+			loginStatus,
+			errorMessage,
+		)
+		return err
+	}
+
 	_, err := a.stmts.putAuthEvent.ExecContext(
 		ctx,
 		record.AuthID,

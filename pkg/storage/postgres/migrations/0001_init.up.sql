@@ -50,15 +50,12 @@ CREATE TABLE IF NOT EXISTS openauth.auth_user (
   user_id UUID NOT NULL,
   date_added TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_auth_user_user_id
-    FOREIGN KEY (user_id)
-    REFERENCES openauth.auth (id)
-    ON DELETE CASCADE,
-
   CONSTRAINT fk_auth_user_auth_id
     FOREIGN KEY (auth_id)
     REFERENCES openauth.auth (id)
     ON DELETE CASCADE
 );
+
+CREATE INDEX IF NOT EXISTS idx_auth_user_user_id ON openauth.auth_user (user_id);
 
 COMMIT;

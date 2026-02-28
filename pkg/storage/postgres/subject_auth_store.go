@@ -44,6 +44,19 @@ func (a *Adapter) PutSubjectAuth(ctx context.Context, record storage.SubjectAuth
 		dateAdded = time.Now().UTC()
 	}
 
+	if a.tx != nil {
+		stmt := a.tx.StmtContext(ctx, a.stmts.putAuthUser)
+		defer stmt.Close()
+		_, err := stmt.ExecContext(
+			ctx,
+			record.ID,
+			record.AuthID,
+			record.Subject,
+			dateAdded,
+		)
+		return err
+	}
+
 	_, err := a.stmts.putAuthUser.ExecContext(
 		ctx,
 		record.ID,
@@ -110,6 +123,13 @@ func (a *Adapter) ListSubjectAuthByAuthID(ctx context.Context, authID string) ([
 
 func (a *Adapter) DeleteSubjectAuth(ctx context.Context, id string) error {
 	if err := a.requirePreparedStatements(); err != nil {
+		return err
+	}
+
+	if a.tx != nil {
+		stmt := a.tx.StmtContext(ctx, a.stmts.deleteAuthUserByID)
+		defer stmt.Close()
+		_, err := stmt.ExecContext(ctx, id)
 		return err
 	}
 

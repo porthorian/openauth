@@ -11,8 +11,9 @@ import (
 
 type Adapter struct {
 	db *sql.DB
+	tx *sql.Tx
 
-	stmts preparedStatements
+	stmts *preparedStatements
 }
 
 type preparedStatements struct {
@@ -148,11 +149,12 @@ var _ storage.SubjectAuthStore = (*Adapter)(nil)
 var _ storage.AuthLogStore = (*Adapter)(nil)
 var _ storage.RoleStore = (*Adapter)(nil)
 var _ storage.PermissionStore = (*Adapter)(nil)
+var _ storage.AuthMaterialTransactor = (*Adapter)(nil)
 
 func NewAdapter(db *sql.DB) (*Adapter, error) {
 	adapter := &Adapter{
 		db: db,
-		stmts: preparedStatements{
+		stmts: &preparedStatements{
 			getAuthsBySize: map[int]*sql.Stmt{},
 		},
 	}
@@ -167,6 +169,12 @@ func NewAdapter(db *sql.DB) (*Adapter, error) {
 
 func (a *Adapter) Close() error {
 	if a == nil {
+		return nil
+	}
+	if a.tx != nil {
+		return nil
+	}
+	if a.stmts == nil {
 		return nil
 	}
 
@@ -225,7 +233,7 @@ func (a *Adapter) prepareStatements() (err error) {
 			return err
 		}
 		prepared = append(prepared, stmt)
-		spec.assign(&a.stmts, stmt)
+		spec.assign(a.stmts, stmt)
 	}
 	return nil
 }
@@ -233,6 +241,9 @@ func (a *Adapter) prepareStatements() (err error) {
 func (a *Adapter) requirePreparedStatements() error {
 	if _, err := a.requireDB(); err != nil {
 		return err
+	}
+	if a.stmts == nil {
+		return ErrAdapterNotInitialized
 	}
 
 	if a.stmts.putAuth == nil || a.stmts.getAuth == nil || a.stmts.deleteAuth == nil {

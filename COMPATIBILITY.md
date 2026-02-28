@@ -15,12 +15,13 @@ This policy defines compatibility expectations for OpenAuth APIs, behaviors, and
 
 ## Current Authenticator Contract
 - Root auth interfaces currently use:
-- `AuthPassword(ctx, PasswordInput)`
-- `AuthToken(ctx, TokenInput)`
+- `Authorize(ctx, AuthInput)`
+- `CreateAuth(ctx, CreateAuthInput)`
 - `ValidateToken(ctx, token)`
 - Input contracts are currently:
-- `PasswordInput{UserID, Password, Metadata}`
-- `TokenInput{UserID, Token, Metadata}`
+- `AuthInput{UserID, Type, Value, Metadata}`
+- `InputType` values: `password`, `token`
+- `CreateAuthInput{UserID, Value, ExpiresAt, Metadata}`
 - Any rename/removal/signature change to these is a breaking API change.
 
 ## Deprecation

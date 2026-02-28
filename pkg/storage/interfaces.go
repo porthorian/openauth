@@ -131,3 +131,7 @@ type AuthdMaterial struct {
 	Role       RoleStore
 	Permission PermissionStore
 }
+
+type AuthMaterialTransactor interface {
+	WithAuthMaterialTx(ctx context.Context, fn func(material AuthMaterial) error) error
+}

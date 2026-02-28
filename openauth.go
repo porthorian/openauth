@@ -27,6 +27,8 @@ type Client struct {
 	closeResource func() error
 }
 
+var _ Authenticator = (*Client)(nil)
+
 func New(auth Authenticator, config Config) (*Client, error) {
 	closeResource, resolvedConfig, err := config.initialize(context.Background())
 	if err != nil {
@@ -58,31 +60,19 @@ func NewDefault(config Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) AuthPassword(ctx context.Context, input PasswordInput) (Principal, error) {
+func (c *Client) Authorize(ctx context.Context, input AuthInput) (Principal, error) {
 	if c == nil || c.auth == nil {
 		return Principal{}, oerrors.ErrMissingAuthenticator
 	}
 
-	p, err := c.auth.AuthPassword(ctx, input)
+	p, err := c.auth.Authorize(ctx, input)
 	if err != nil {
-		return Principal{}, oerrors.Wrap(oerrors.CodeUnauthenticated, "failed to authenticate", err)
+		return Principal{}, oerrors.Wrap(oerrors.CodeUnauthenticated, "failed to authorize", err)
 	}
 	return p, nil
 }
 
-func (c *Client) AuthToken(ctx context.Context, input TokenInput) (Principal, error) {
-	if c == nil || c.auth == nil {
-		return Principal{}, oerrors.ErrMissingAuthenticator
-	}
-
-	p, err := c.auth.AuthToken(ctx, input)
-	if err != nil {
-		return Principal{}, oerrors.Wrap(oerrors.CodeUnauthenticated, "failed to authenticate access token", err)
-	}
-	return p, nil
-}
-
-func (c *Client) Validate(ctx context.Context, token string) (Principal, error) {
+func (c *Client) ValidateToken(ctx context.Context, token string) (Principal, error) {
 	if c == nil || c.auth == nil {
 		return Principal{}, oerrors.ErrMissingAuthenticator
 	}
@@ -92,6 +82,18 @@ func (c *Client) Validate(ctx context.Context, token string) (Principal, error) 
 		return Principal{}, oerrors.Wrap(oerrors.CodeInvalidToken, "failed to validate token", err)
 	}
 	return p, nil
+}
+
+func (c *Client) CreateAuth(ctx context.Context, input CreateAuthInput) error {
+	if c == nil || c.auth == nil {
+		return oerrors.ErrMissingAuthenticator
+	}
+
+	err := c.auth.CreateAuth(ctx, input)
+	if err != nil {
+		return oerrors.Wrap(oerrors.CodeUnknown, "failed to create auth", err)
+	}
+	return nil
 }
 
 func (c *Client) Close() error {

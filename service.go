@@ -3,6 +3,7 @@ package openauth
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -43,9 +44,15 @@ func NewAuthService(config Config) *AuthService {
 	}
 }
 
-func (s *AuthService) AuthPassword(ctx context.Context, input PasswordInput) (Principal, error) {
+func (s *AuthService) Authorize(ctx context.Context, input AuthInput) (Principal, error) {
 	if s == nil || s.authStore.Auth == nil || s.authStore.SubjectAuth == nil {
 		return Principal{}, oerrors.New(oerrors.CodeStorageUnavailable, "auth storage is not configured")
+	}
+	if s.hasher == nil {
+		return Principal{}, oerrors.New(oerrors.CodeUnknown, "hasher is not configured")
+	}
+	if s.authdStore.Role == nil || s.authdStore.Permission == nil {
+		return Principal{}, oerrors.New(oerrors.CodeStorageUnavailable, "authorization storage is not configured")
 	}
 
 	subjects, err := s.authStore.SubjectAuth.ListSubjectAuthBySubject(ctx, input.UserID)
@@ -70,9 +77,14 @@ func (s *AuthService) AuthPassword(ctx context.Context, input PasswordInput) (Pr
 		return Principal{}, oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to retrieve auth records", err)
 	}
 
+	materialType := input.GetMaterialType()
+	if materialType == "" {
+		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "unsupported auth input type")
+	}
+
 	var selectedRecord *storage.AuthRecord
 	for _, record := range records {
-		if record.MaterialType != storage.AuthMaterialTypePassword {
+		if record.MaterialType != materialType {
 			continue
 		}
 
@@ -83,7 +95,7 @@ func (s *AuthService) AuthPassword(ctx context.Context, input PasswordInput) (Pr
 	}
 
 	if selectedRecord == nil {
-		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "no valid password auth record found for user_id")
+		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "no valid input auth record found for user_id")
 	}
 
 	if selectedRecord.ExpiresAt != nil && selectedRecord.ExpiresAt.Before(time.Now().UTC()) {
@@ -99,57 +111,162 @@ func (s *AuthService) AuthPassword(ctx context.Context, input PasswordInput) (Pr
 		return Principal{}, oerrors.New(oerrors.CodeCredentialsExpired, "credentials have expired")
 	}
 
-	ok, err := s.hasher.Verify(input.Password, selectedRecord.MaterialHash)
-	if err != nil {
-		return Principal{}, oerrors.Wrap(oerrors.CodeInvalidCredentials, "unable to verify password authentication", err)
+	ok := false
+	var verifyErr error
+	switch materialType {
+	case storage.AuthMaterialTypePassword:
+		ok, verifyErr = s.hasher.Verify(input.Value, selectedRecord.MaterialHash)
+	default:
+		return Principal{}, oerrors.New(oerrors.CodeNotImplemented, "auth input type is not implemented")
+	}
+
+	if verifyErr != nil {
+		return Principal{}, oerrors.Wrap(oerrors.CodeInvalidCredentials, "unable to verify credentials", verifyErr)
 	}
 
 	if !ok {
-		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "password authentication failed")
+		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "authentication failed")
 	}
 
 	authenticatedAt := time.Now().UTC()
-	if err := s.authStore.AuthLog.PutAuthLog(ctx, storage.AuthLogRecord{
-		ID:         uuid.NewString(),
-		DateAdded:  time.Now().UTC(),
-		AuthID:     selectedRecord.ID,
-		Subject:    input.UserID,
-		Event:      storage.AuthLogEventUsed,
-		OccurredAt: authenticatedAt,
-	}); err != nil {
-		s.logger.Error(
-			err,
-			"failed to write auth log record",
-			"auth_id", selectedRecord.ID,
-			"subject", input.UserID,
-			"event", storage.AuthLogEventUsed,
-		)
+	if s.authStore.AuthLog != nil {
+		if err := s.authStore.AuthLog.PutAuthLog(ctx, storage.AuthLogRecord{
+			ID:         uuid.NewString(),
+			DateAdded:  time.Now().UTC(),
+			AuthID:     selectedRecord.ID,
+			Subject:    input.UserID,
+			Event:      storage.AuthLogEventUsed,
+			OccurredAt: authenticatedAt,
+		}); err != nil {
+			s.logger.Error(
+				err,
+				"failed to write auth log record",
+				"auth_id", selectedRecord.ID,
+				"subject", input.UserID,
+				"event", storage.AuthLogEventUsed,
+			)
+		}
 	}
 
 	// TODO Configure tenants
-	role, err := s.authdStore.Role.GetRole(ctx, input.UserID, "default")
-	if err != nil {
-		return Principal{}, oerrors.Wrap(oerrors.CodeRole, "failed to get role", err)
-	}
+	// role, err := s.authdStore.Role.GetRole(ctx, input.UserID, "default")
+	// if err != nil {
+	// 	return Principal{}, oerrors.Wrap(oerrors.CodeRole, "failed to get role", err)
+	// }
 
-	perm, err := s.authdStore.Permission.GetPermission(ctx, input.UserID, "default")
-	if err != nil {
-		return Principal{}, oerrors.Wrap(oerrors.CodePermission, "failed to get permission", err)
-	}
+	// perm, err := s.authdStore.Permission.GetPermission(ctx, input.UserID, "default")
+	// if err != nil {
+	// 	return Principal{}, oerrors.Wrap(oerrors.CodePermission, "failed to get permission", err)
+	// }
 
 	return Principal{
-		Subject:         input.UserID,
-		Tenant:          "default",
-		RoleMask:        role.RoleMask,
-		PermissionMask:  perm.PermissionMask,
+		Subject: input.UserID,
+		Tenant:  "default",
+		//RoleMask:        role.RoleMask,
+		//PermissionMask:  perm.PermissionMask,
 		AuthenticatedAt: authenticatedAt,
 	}, nil
 }
 
-func (s *AuthService) AuthToken(ctx context.Context, input TokenInput) (Principal, error) {
-	return Principal{}, errors.New("not implemented")
+func (s *AuthService) CreateAuth(ctx context.Context, input CreateAuthInput) error {
+	if s == nil || s.authStore.Auth == nil || s.authStore.SubjectAuth == nil {
+		return oerrors.New(oerrors.CodeStorageUnavailable, "auth storage is not configured")
+	}
+	if s.hasher == nil {
+		return oerrors.New(oerrors.CodeUnknown, "hasher is not configured")
+	}
+
+	userID := strings.TrimSpace(input.UserID)
+	if userID == "" {
+		return oerrors.New(oerrors.CodeInvalidCredentials, "user_id is required")
+	}
+	if strings.TrimSpace(input.Value) == "" {
+		return oerrors.New(oerrors.CodeInvalidCredentials, "auth value is required")
+	}
+
+	var expiresAt *time.Time
+	if input.ExpiresAt != nil {
+		exp := input.ExpiresAt.UTC()
+		if !exp.After(time.Now().UTC()) {
+			return oerrors.New(oerrors.CodeInvalidCredentials, "expires_at must be in the future")
+		}
+		expiresAt = &exp
+	}
+
+	materialHash, err := s.hasher.Hash(input.Value)
+	if err != nil {
+		return oerrors.Wrap(oerrors.CodeUnknown, "failed to hash auth value", err)
+	}
+
+	writeAuth := func(stores storage.AuthMaterial, transactional bool) error {
+		return s.createAuthWithStores(ctx, stores, userID, materialHash, expiresAt, input.Metadata, transactional)
+	}
+
+	if txRunner, ok := s.authStore.Auth.(storage.AuthMaterialTransactor); ok {
+		if err := txRunner.WithAuthMaterialTx(ctx, func(stores storage.AuthMaterial) error {
+			return writeAuth(stores, true)
+		}); err != nil {
+			if oerrors.IsCode(err, oerrors.CodeStorageUnavailable) || oerrors.IsCode(err, oerrors.CodeInvalidCredentials) || oerrors.IsCode(err, oerrors.CodeUnknown) {
+				return err
+			}
+			return oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to run create auth transaction", err)
+		}
+		return nil
+	}
+
+	return writeAuth(s.authStore, false)
 }
 
 func (s *AuthService) ValidateToken(ctx context.Context, token string) (Principal, error) {
 	return Principal{}, errors.New("not implemented")
+}
+
+func (s *AuthService) createAuthWithStores(ctx context.Context, stores storage.AuthMaterial, userID string, materialHash string, expiresAt *time.Time, metadata map[string]string, transactional bool) error {
+	if stores.Auth == nil || stores.SubjectAuth == nil {
+		return oerrors.New(oerrors.CodeStorageUnavailable, "auth storage is not configured")
+	}
+
+	now := time.Now().UTC()
+	authID := uuid.NewString()
+
+	if err := stores.Auth.PutAuth(ctx, storage.AuthRecord{
+		ID:           authID,
+		Status:       storage.StatusActive,
+		DateAdded:    now,
+		MaterialType: storage.AuthMaterialTypePassword,
+		MaterialHash: materialHash,
+		ExpiresAt:    expiresAt,
+		Metadata:     metadata,
+	}); err != nil {
+		return oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to create auth record", err)
+	}
+
+	if err := stores.SubjectAuth.PutSubjectAuth(ctx, storage.SubjectAuthRecord{
+		ID:        uuid.NewString(),
+		DateAdded: now,
+		Subject:   userID,
+		AuthID:    authID,
+	}); err != nil {
+		if !transactional {
+			if deleteErr := stores.Auth.DeleteAuth(ctx, authID); deleteErr != nil {
+				s.logger.Error(deleteErr, "failed to cleanup auth record after subject link failure", "auth_id", authID, "subject", userID)
+			}
+		}
+		return oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to link auth record to subject", err)
+	}
+
+	if stores.AuthLog != nil {
+		if err := stores.AuthLog.PutAuthLog(ctx, storage.AuthLogRecord{
+			ID:         uuid.NewString(),
+			DateAdded:  now,
+			AuthID:     authID,
+			Subject:    userID,
+			Event:      storage.AuthLogEventValidated,
+			OccurredAt: now,
+		}); err != nil {
+			s.logger.Error(err, "failed to write create auth log record", "auth_id", authID, "subject", userID)
+		}
+	}
+
+	return nil
 }

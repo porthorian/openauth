@@ -10,7 +10,7 @@ This roadmap describes planned delivery for OpenAuth and keeps implementation pr
 
 ## Current Status
 - Phase: Planning and scaffolding.
-- Focus: defining stable interfaces and package boundaries around the current auth contract (`AuthPassword`, `AuthToken`, `ValidateToken`).
+- Focus: defining stable interfaces and package boundaries around the current auth contract (`Authorize`, `CreateAuth`, `ValidateToken`).
 
 ## Milestones
 1. Foundation
@@ -20,7 +20,7 @@ This roadmap describes planned delivery for OpenAuth and keeps implementation pr
 - Set transparency artifacts (roadmap, compatibility, release and security docs).
 
 2. Core Auth Engine
-- Implement auth entrypoints: `AuthPassword`, `AuthToken`, and `ValidateToken`.
+- Implement auth entrypoints: `Authorize`, `CreateAuth`, and `ValidateToken`.
 - Map auth method profiles (Basic, Bearer, JWT, OIDC) onto those entrypoints.
 - Implement approaches: DirectJWT, OpaqueIntrospection, PhantomToken.
 - Implement persistence policy matrix by auth profile (authority boundary, cache role, and failure mode).

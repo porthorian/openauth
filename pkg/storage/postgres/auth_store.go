@@ -59,19 +59,13 @@ func (a *Adapter) PutAuth(ctx context.Context, record storage.AuthRecord) error 
 		return err
 	}
 
+	if a.tx != nil {
+		return a.putAuthInTx(ctx, a.tx, record)
+	}
+
 	db, err := a.requireDB()
 	if err != nil {
 		return err
-	}
-
-	dateAdded := record.DateAdded
-	if dateAdded.IsZero() {
-		dateAdded = time.Now().UTC()
-	}
-
-	dateModified := time.Now().UTC()
-	if record.DateModified != nil {
-		dateModified = record.DateModified.UTC()
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -82,8 +76,30 @@ func (a *Adapter) PutAuth(ctx context.Context, record storage.AuthRecord) error 
 		_ = tx.Rollback()
 	}()
 
+	if err := a.putAuthInTx(ctx, tx, record); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *Adapter) putAuthInTx(ctx context.Context, tx *sql.Tx, record storage.AuthRecord) error {
+	dateAdded := record.DateAdded
+	if dateAdded.IsZero() {
+		dateAdded = time.Now().UTC()
+	}
+
+	dateModified := time.Now().UTC()
+	if record.DateModified != nil {
+		dateModified = record.DateModified.UTC()
+	}
+
 	putAuthStmt := tx.StmtContext(ctx, a.stmts.putAuth)
-	_, err = putAuthStmt.ExecContext(
+	_, err := putAuthStmt.ExecContext(
 		ctx,
 		record.ID,
 		string(record.Status),
@@ -116,10 +132,6 @@ func (a *Adapter) PutAuth(ctx context.Context, record storage.AuthRecord) error 
 			}
 		}
 		_ = putMetadataStmt.Close()
-	}
-
-	if err := tx.Commit(); err != nil {
-		return err
 	}
 
 	return nil
@@ -200,6 +212,13 @@ func (a *Adapter) GetAuths(ctx context.Context, ids []string) ([]storage.AuthRec
 
 func (a *Adapter) DeleteAuth(ctx context.Context, id string) error {
 	if err := a.requirePreparedStatements(); err != nil {
+		return err
+	}
+
+	if a.tx != nil {
+		stmt := a.tx.StmtContext(ctx, a.stmts.deleteAuth)
+		defer stmt.Close()
+		_, err := stmt.ExecContext(ctx, id)
 		return err
 	}
 

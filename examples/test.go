@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	"github.com/porthorian/openauth"
 )
 
@@ -50,14 +49,27 @@ func main() {
 	}()
 
 	log.Printf("Client initialized with configured runtime: %+v", client)
-
-	princ, err := client.AuthPassword(context.Background(), openauth.PasswordInput{
-		UserID:   uuid.NewString(),
-		Password: "test1234",
+	userID := "b8575451-3261-4ed3-a5ea-ae0d19754ebd"
+	pwd := "test1234"
+	log.Printf("Testing authorization for user ID: %s", userID)
+	ctx := context.Background()
+	err = client.CreateAuth(ctx, openauth.CreateAuthInput{
+		UserID: userID,
+		Value:  pwd,
 	})
 	if err != nil {
-		log.Printf("AuthPassword error: %v", err)
+		log.Printf("CreateAuth error: %v", err)
 		return
 	}
-	log.Printf("AuthPassword result: %+v", princ)
+
+	princ, err := client.Authorize(ctx, openauth.AuthInput{
+		UserID: userID,
+		Type:   openauth.InputTypePassword,
+		Value:  pwd,
+	})
+	if err != nil {
+		log.Printf("Authorize error: %v", err)
+		return
+	}
+	log.Printf("Authorize result: %+v", princ)
 }
