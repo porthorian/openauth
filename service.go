@@ -3,7 +3,6 @@ package openauth
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -176,21 +175,9 @@ func (s *AuthService) CreateAuth(ctx context.Context, input CreateAuthInput) err
 		return oerrors.New(oerrors.CodeUnknown, "hasher is not configured")
 	}
 
-	userID := strings.TrimSpace(input.UserID)
-	if userID == "" {
-		return oerrors.New(oerrors.CodeInvalidCredentials, "user_id is required")
-	}
-	if strings.TrimSpace(input.Value) == "" {
-		return oerrors.New(oerrors.CodeInvalidCredentials, "auth value is required")
-	}
-
-	var expiresAt *time.Time
-	if input.ExpiresAt != nil {
-		exp := input.ExpiresAt.UTC()
-		if !exp.After(time.Now().UTC()) {
-			return oerrors.New(oerrors.CodeInvalidCredentials, "expires_at must be in the future")
-		}
-		expiresAt = &exp
+	input = input.Normalize()
+	if err := input.Validate(); err != nil {
+		return err
 	}
 
 	materialHash, err := s.hasher.Hash(input.Value)
@@ -199,7 +186,7 @@ func (s *AuthService) CreateAuth(ctx context.Context, input CreateAuthInput) err
 	}
 
 	writeAuth := func(stores storage.AuthMaterial, transactional bool) error {
-		return s.createAuthWithStores(ctx, stores, userID, materialHash, expiresAt, input.Metadata, transactional)
+		return s.createAuthWithStores(ctx, stores, input.UserID, materialHash, input.ExpiresAt, input.Metadata, transactional)
 	}
 
 	if txRunner, ok := s.authStore.Auth.(storage.AuthMaterialTransactor); ok {

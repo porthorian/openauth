@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	oerrors "github.com/porthorian/openauth/pkg/errors"
 	"github.com/porthorian/openauth/pkg/storage"
 )
 
@@ -74,4 +75,20 @@ func (a CreateAuthInput) Normalize() CreateAuthInput {
 		ExpiresAt: expiresAt,
 		Metadata:  a.Metadata,
 	}
+}
+
+func (a CreateAuthInput) Validate() error {
+	if a.UserID == "" {
+		return oerrors.New(oerrors.CodeInvalidCredentials, "user_id is required")
+	}
+
+	if a.Value == "" {
+		return oerrors.New(oerrors.CodeInvalidCredentials, "auth value is required")
+	}
+
+	if a.ExpiresAt != nil && !a.ExpiresAt.After(time.Now().UTC()) {
+		return oerrors.New(oerrors.CodeInvalidCredentials, "expires_at must be in the future")
+	}
+
+	return nil
 }
