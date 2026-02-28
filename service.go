@@ -23,6 +23,13 @@ type AuthService struct {
 	defaultPolicy storage.AuthProfile
 }
 
+type createAuthWrite struct {
+	userID       string
+	materialHash string
+	expiresAt    *time.Time
+	metadata     map[string]string
+}
+
 var _ Authenticator = (*AuthService)(nil)
 
 func NewAuthService(config Config) *AuthService {
@@ -185,8 +192,16 @@ func (s *AuthService) CreateAuth(ctx context.Context, input CreateAuthInput) err
 		return oerrors.Wrap(oerrors.CodeUnknown, "failed to hash auth value", err)
 	}
 
+	write := createAuthWrite{
+		userID:       input.UserID,
+		materialHash: materialHash,
+		expiresAt:    input.ExpiresAt,
+		metadata:     input.Metadata,
+	}
+
 	writeAuth := func(stores storage.AuthMaterial, transactional bool) error {
-		return s.createAuthWithStores(ctx, stores, input.UserID, materialHash, input.ExpiresAt, input.Metadata, transactional)
+		request := write
+		return s.createAuthWithStores(ctx, stores, transactional, request)
 	}
 
 	if txRunner, ok := s.authStore.Auth.(storage.AuthMaterialTransactor); ok {
@@ -208,7 +223,7 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (Principa
 	return Principal{}, errors.New("not implemented")
 }
 
-func (s *AuthService) createAuthWithStores(ctx context.Context, stores storage.AuthMaterial, userID string, materialHash string, expiresAt *time.Time, metadata map[string]string, transactional bool) error {
+func (s *AuthService) createAuthWithStores(ctx context.Context, stores storage.AuthMaterial, transactional bool, request createAuthWrite) error {
 	if stores.Auth == nil || stores.SubjectAuth == nil {
 		return oerrors.New(oerrors.CodeStorageUnavailable, "auth storage is not configured")
 	}
@@ -221,9 +236,9 @@ func (s *AuthService) createAuthWithStores(ctx context.Context, stores storage.A
 		Status:       storage.StatusActive,
 		DateAdded:    now,
 		MaterialType: storage.AuthMaterialTypePassword,
-		MaterialHash: materialHash,
-		ExpiresAt:    expiresAt,
-		Metadata:     metadata,
+		MaterialHash: request.materialHash,
+		ExpiresAt:    request.expiresAt,
+		Metadata:     request.metadata,
 	}); err != nil {
 		return oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to create auth record", err)
 	}
@@ -231,12 +246,12 @@ func (s *AuthService) createAuthWithStores(ctx context.Context, stores storage.A
 	if err := stores.SubjectAuth.PutSubjectAuth(ctx, storage.SubjectAuthRecord{
 		ID:        uuid.NewString(),
 		DateAdded: now,
-		Subject:   userID,
+		Subject:   request.userID,
 		AuthID:    authID,
 	}); err != nil {
 		if !transactional {
 			if deleteErr := stores.Auth.DeleteAuth(ctx, authID); deleteErr != nil {
-				s.logger.Error(deleteErr, "failed to cleanup auth record after subject link failure", "auth_id", authID, "subject", userID)
+				s.logger.Error(deleteErr, "failed to cleanup auth record after subject link failure", "auth_id", authID, "subject", request.userID)
 			}
 		}
 		return oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to link auth record to subject", err)
@@ -247,11 +262,11 @@ func (s *AuthService) createAuthWithStores(ctx context.Context, stores storage.A
 			ID:         uuid.NewString(),
 			DateAdded:  now,
 			AuthID:     authID,
-			Subject:    userID,
-			Event:      storage.AuthLogEventValidated,
+			Subject:    request.userID,
+			Event:      storage.AuthLogEventCreated,
 			OccurredAt: now,
 		}); err != nil {
-			s.logger.Error(err, "failed to write create auth log record", "auth_id", authID, "subject", userID)
+			s.logger.Error(err, "failed to write create auth log record", "auth_id", authID, "subject", request.userID)
 		}
 	}
 

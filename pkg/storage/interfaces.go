@@ -70,6 +70,9 @@ type AuthLogEvent string
 const (
 	AuthLogEventUsed      AuthLogEvent = "used"
 	AuthLogEventValidated AuthLogEvent = "validated"
+	AuthLogEventCreated   AuthLogEvent = "created"
+	AuthLogEventDeleted   AuthLogEvent = "deleted"
+	AuthLogEventExpired   AuthLogEvent = "expired"
 	AuthLogEventRevoked   AuthLogEvent = "revoked"
 )
 
