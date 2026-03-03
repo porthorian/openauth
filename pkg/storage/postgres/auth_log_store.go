@@ -19,7 +19,7 @@ INSERT INTO openauth.auth_event (
 
 	listAuthEventByAuthIDQuery = `
 SELECT
-  id::text, date_added, auth_id::text, event, metadata
+  id, date_added, auth_id::text, event, metadata
 FROM openauth.auth_event
 WHERE auth_id = $1
 ORDER BY date_added ASC
@@ -27,7 +27,7 @@ ORDER BY date_added ASC
 
 	listAuthEventBySubjectQuery = `
 SELECT
-  id::text, date_added, auth_id::text, event, metadata
+  id, date_added, auth_id::text, event, metadata
 FROM openauth.auth_event
 WHERE metadata ->> 'subject' = $1
 ORDER BY date_added ASC

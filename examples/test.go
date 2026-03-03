@@ -49,7 +49,7 @@ func main() {
 	}()
 
 	log.Printf("Client initialized with configured runtime: %+v", client)
-	userID := "b8575451-3261-4ed3-a5ea-ae0d19754ebd"
+	userID := "b8575451-3261-4ed3-a5ea-ae0d19724ebd"
 	pwd := "test1234"
 	log.Printf("Testing authorization for user ID: %s", userID)
 	ctx := context.Background()

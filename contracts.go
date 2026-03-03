@@ -46,8 +46,8 @@ type Authenticator interface {
 	ValidateToken(ctx context.Context, token string) (Principal, error)
 }
 
-func (a AuthInput) GetMaterialType() storage.AuthMaterialType {
-	switch a.Type {
+func (a InputType) GetMaterialType() storage.AuthMaterialType {
+	switch a {
 	case InputTypePassword:
 		return storage.AuthMaterialTypePassword
 	case InputTypeToken:
@@ -55,6 +55,10 @@ func (a AuthInput) GetMaterialType() storage.AuthMaterialType {
 		return ""
 	}
 	return ""
+}
+
+func (a AuthInput) GetMaterialType() storage.AuthMaterialType {
+	return a.Type.GetMaterialType()
 }
 
 func (a CreateAuthInput) Normalize() CreateAuthInput {

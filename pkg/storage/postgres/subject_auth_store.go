@@ -19,14 +19,14 @@ SET
 
 	listAuthUserByUserIDQuery = `
 SELECT
-  id::text, date_added, auth_id::text, user_id::text
+  id, date_added, auth_id, user_id
 FROM openauth.auth_user
 WHERE user_id = $1
 `
 
 	listAuthUserByAuthIDQuery = `
 SELECT
-  id::text, date_added, auth_id::text, user_id::text
+  id, date_added, auth_id, user_id
 FROM openauth.auth_user
 WHERE auth_id = $1
 `

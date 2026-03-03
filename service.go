@@ -130,7 +130,23 @@ func (s *AuthService) Authorize(ctx context.Context, input AuthInput) (Principal
 		return Principal{}, oerrors.Wrap(oerrors.CodeInvalidCredentials, "unable to verify credentials", verifyErr)
 	}
 
-	if !ok {
+	if !ok && s.authStore.AuthLog != nil {
+		if err := s.authStore.AuthLog.PutAuthLog(ctx, storage.AuthLogRecord{
+			ID:         uuid.NewString(),
+			DateAdded:  time.Now().UTC(),
+			AuthID:     selectedRecord.ID,
+			Subject:    input.UserID,
+			Event:      storage.AuthLogEventFailed,
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			s.logger.Error(
+				err,
+				"failed to write failed auth log record",
+				"auth_id", selectedRecord.ID,
+				"subject", input.UserID,
+				"event", storage.AuthLogEventFailed,
+			)
+		}
 		return Principal{}, oerrors.New(oerrors.CodeInvalidCredentials, "authentication failed")
 	}
 
@@ -185,6 +201,45 @@ func (s *AuthService) CreateAuth(ctx context.Context, input CreateAuthInput) err
 	input = input.Normalize()
 	if err := input.Validate(); err != nil {
 		return err
+	}
+
+	auths, err := s.authStore.SubjectAuth.ListSubjectAuthBySubject(ctx, input.UserID)
+	if err != nil {
+		return oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to lookup existing auth records for subject", err)
+	}
+
+	var authIds []string
+	for _, auth := range auths {
+		if auth.Subject != input.UserID {
+			return oerrors.New(oerrors.CodeInvalidCredentials, "multiple auth records found for different user_ids")
+		}
+		authIds = append(authIds, auth.AuthID)
+	}
+
+	if len(authIds) > 0 {
+		records, err := s.authStore.Auth.GetAuths(ctx, authIds)
+		if err != nil {
+			return oerrors.Wrap(oerrors.CodeStorageUnavailable, "failed to retrieve existing auth records for subject", err)
+		}
+
+		for _, record := range records {
+			if record.Status != storage.StatusActive {
+				continue
+			}
+
+			if record.MaterialType != InputTypePassword.GetMaterialType() {
+				continue
+			}
+
+			ok, verifyErr := s.hasher.Verify(input.Value, record.MaterialHash)
+			if verifyErr != nil {
+				return oerrors.Wrap(oerrors.CodeUnknown, "unable to verify credentials against existing auth record", verifyErr)
+			}
+
+			if ok {
+				return oerrors.New(oerrors.CodeInvalidCredentials, "auth with the same value already exists for user_id")
+			}
+		}
 	}
 
 	materialHash, err := s.hasher.Hash(input.Value)

@@ -68,6 +68,7 @@ type PermissionRecord struct {
 type AuthLogEvent string
 
 const (
+	AuthLogEventFailed    AuthLogEvent = "failed"
 	AuthLogEventUsed      AuthLogEvent = "used"
 	AuthLogEventValidated AuthLogEvent = "validated"
 	AuthLogEventCreated   AuthLogEvent = "created"
