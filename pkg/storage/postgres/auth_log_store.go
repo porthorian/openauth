@@ -2,9 +2,8 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
-	"net/url"
-	"strconv"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,13 +13,13 @@ import (
 const (
 	putAuthEventQuery = `
 INSERT INTO openauth.auth_event (
-  auth_id, date_added, user_agent, ip_address, login_status, error_message
-) VALUES ($1, $2, $3, $4, $5, $6)
+  auth_id, date_added, user_agent, ip_address, event, metadata, error_message
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 	listAuthEventByAuthIDQuery = `
 SELECT
-  id::text, date_added, auth_id::text, user_agent, ip_address::text, login_status, error_message
+  id::text, date_added, auth_id::text, event, metadata
 FROM openauth.auth_event
 WHERE auth_id = $1
 ORDER BY date_added ASC
@@ -28,9 +27,9 @@ ORDER BY date_added ASC
 
 	listAuthEventBySubjectQuery = `
 SELECT
-  id::text, date_added, auth_id::text, user_agent, ip_address::text, login_status, error_message
+  id::text, date_added, auth_id::text, event, metadata
 FROM openauth.auth_event
-WHERE error_message LIKE $1
+WHERE metadata ->> 'subject' = $1
 ORDER BY date_added ASC
 `
 )
@@ -49,32 +48,52 @@ func (a *Adapter) PutAuthLog(ctx context.Context, record storage.AuthLogRecord) 
 		}
 	}
 
+	metadata := cloneStringMap(record.Metadata)
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+
 	userAgent := "openauth"
-	if record.Metadata != nil {
-		if value := strings.TrimSpace(record.Metadata["user_agent"]); value != "" {
-			userAgent = value
-		}
+	if value := strings.TrimSpace(metadata["user_agent"]); value != "" {
+		userAgent = value
 	}
 
 	ipAddress := "0.0.0.0"
-	if record.Metadata != nil {
-		if value := strings.TrimSpace(record.Metadata["ip_address"]); value != "" {
-			ipAddress = value
-		}
+	if value := strings.TrimSpace(metadata["ip_address"]); value != "" {
+		ipAddress = value
 	}
 
-	loginStatus := record.Event != storage.AuthLogEventRevoked
-	if record.Metadata != nil {
-		if raw := strings.TrimSpace(record.Metadata["login_status"]); raw != "" {
-			parsed, err := strconv.ParseBool(raw)
-			if err != nil {
-				return err
-			}
-			loginStatus = parsed
-		}
+	event := strings.TrimSpace(string(record.Event))
+	if event == "" {
+		event = strings.TrimSpace(metadata["event"])
+	}
+	if event == "" {
+		event = string(storage.AuthLogEventUsed)
 	}
 
-	errorMessage := encodeAuthEventErrorMessage(record)
+	occurredAt := record.OccurredAt
+	if occurredAt.IsZero() {
+		occurredAt = dateAdded
+	}
+
+	metadata["occurred_at"] = occurredAt.UTC().Format(time.RFC3339Nano)
+	if subject := strings.TrimSpace(record.Subject); subject != "" {
+		metadata["subject"] = subject
+	}
+
+	var errorMessage any
+	if msg := strings.TrimSpace(metadata["error_message"]); msg != "" {
+		errorMessage = msg
+	}
+	delete(metadata, "user_agent")
+	delete(metadata, "ip_address")
+	delete(metadata, "event")
+	delete(metadata, "error_message")
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
 
 	if a.tx != nil {
 		stmt := a.tx.StmtContext(ctx, a.stmts.putAuthEvent)
@@ -85,19 +104,21 @@ func (a *Adapter) PutAuthLog(ctx context.Context, record storage.AuthLogRecord) 
 			dateAdded,
 			userAgent,
 			ipAddress,
-			loginStatus,
+			event,
+			metadataJSON,
 			errorMessage,
 		)
 		return err
 	}
 
-	_, err := a.stmts.putAuthEvent.ExecContext(
+	_, err = a.stmts.putAuthEvent.ExecContext(
 		ctx,
 		record.AuthID,
 		dateAdded,
 		userAgent,
 		ipAddress,
-		loginStatus,
+		event,
+		metadataJSON,
 		errorMessage,
 	)
 	return err
@@ -135,8 +156,7 @@ func (a *Adapter) ListAuthLogsBySubject(ctx context.Context, subject string) ([]
 		return nil, err
 	}
 
-	pattern := "subject=" + url.QueryEscape(subject) + ";%"
-	rows, err := a.stmts.listAuthEventBySubject.QueryContext(ctx, pattern)
+	rows, err := a.stmts.listAuthEventBySubject.QueryContext(ctx, subject)
 	if err != nil {
 		return nil, err
 	}
@@ -163,102 +183,96 @@ func (a *Adapter) ListAuthLogsBySubject(ctx context.Context, subject string) ([]
 
 func scanAuthEvent(s scanner) (storage.AuthLogRecord, error) {
 	var (
-		record       storage.AuthLogRecord
-		dateAdded    time.Time
-		userAgent    string
-		ipAddress    string
-		loginStatus  bool
-		errorMessage sql.NullString
+		record      storage.AuthLogRecord
+		dateAdded   time.Time
+		event       string
+		metadataRaw []byte
 	)
 
 	if err := s.Scan(
 		&record.ID,
 		&dateAdded,
 		&record.AuthID,
-		&userAgent,
-		&ipAddress,
-		&loginStatus,
-		&errorMessage,
+		&event,
+		&metadataRaw,
 	); err != nil {
 		return storage.AuthLogRecord{}, err
 	}
 
 	record.DateAdded = dateAdded.UTC()
 	record.OccurredAt = record.DateAdded
-	record.Metadata = map[string]string{
-		"user_agent":   userAgent,
-		"ip_address":   ipAddress,
-		"login_status": strconv.FormatBool(loginStatus),
+	record.Metadata = map[string]string{}
+
+	if len(metadataRaw) > 0 {
+		decodedMetadata, err := decodeAuthEventMetadata(metadataRaw)
+		if err != nil {
+			return storage.AuthLogRecord{}, err
+		}
+		for key, value := range decodedMetadata {
+			record.Metadata[key] = value
+		}
 	}
 
-	if loginStatus {
-		record.Event = storage.AuthLogEventUsed
-	} else {
-		record.Event = storage.AuthLogEventRevoked
+	if subject := strings.TrimSpace(record.Metadata["subject"]); subject != "" {
+		record.Subject = subject
 	}
 
-	if errorMessage.Valid && strings.TrimSpace(errorMessage.String) != "" {
-		subject, event, occurredAt, message := decodeAuthEventErrorMessage(errorMessage.String)
-		if subject != "" {
-			record.Subject = subject
+	record.Event = storage.AuthLogEvent(strings.TrimSpace(event))
+	if record.Event == "" {
+		if metadataEvent := strings.TrimSpace(record.Metadata["event"]); metadataEvent != "" {
+			record.Event = storage.AuthLogEvent(metadataEvent)
 		}
-		if event != "" {
-			record.Event = storage.AuthLogEvent(event)
-		}
-		if !occurredAt.IsZero() {
-			record.OccurredAt = occurredAt
-		}
-		if message != "" {
-			record.Metadata["error_message"] = message
+	}
+
+	if occurredAtRaw := strings.TrimSpace(record.Metadata["occurred_at"]); occurredAtRaw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, occurredAtRaw)
+		if err == nil {
+			record.OccurredAt = parsed.UTC()
 		}
 	}
 
 	return record, nil
 }
 
-func encodeAuthEventErrorMessage(record storage.AuthLogRecord) string {
-	occurredAt := record.OccurredAt
-	if occurredAt.IsZero() {
-		occurredAt = time.Now().UTC()
+func decodeAuthEventMetadata(raw []byte) (map[string]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
 	}
 
-	parts := []string{
-		"subject=" + url.QueryEscape(record.Subject),
-		"event=" + url.QueryEscape(string(record.Event)),
-		"occurred_at=" + url.QueryEscape(occurredAt.UTC().Format(time.RFC3339Nano)),
+	typed := map[string]string{}
+	if err := json.Unmarshal(raw, &typed); err == nil {
+		return typed, nil
 	}
-	if record.Metadata != nil {
-		if message := strings.TrimSpace(record.Metadata["error_message"]); message != "" {
-			parts = append(parts, "error="+url.QueryEscape(message))
+
+	anyTyped := map[string]any{}
+	if err := json.Unmarshal(raw, &anyTyped); err != nil {
+		return nil, err
+	}
+
+	decoded := make(map[string]string, len(anyTyped))
+	for key, value := range anyTyped {
+		switch typedValue := value.(type) {
+		case nil:
+			continue
+		case string:
+			decoded[key] = typedValue
+		default:
+			decoded[key] = fmt.Sprint(typedValue)
 		}
 	}
 
-	return strings.Join(parts, ";")
+	return decoded, nil
 }
 
-func decodeAuthEventErrorMessage(raw string) (subject string, event string, occurredAt time.Time, message string) {
-	parts := strings.Split(raw, ";")
-	values := map[string]string{}
-	for _, part := range parts {
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			continue
-		}
-		decoded, err := url.QueryUnescape(value)
-		if err != nil {
-			continue
-		}
-		values[key] = decoded
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
 	}
 
-	subject = values["subject"]
-	event = values["event"]
-	if values["occurred_at"] != "" {
-		parsed, err := time.Parse(time.RFC3339Nano, values["occurred_at"])
-		if err == nil {
-			occurredAt = parsed.UTC()
-		}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
 	}
-	message = values["error"]
-	return subject, event, occurredAt, message
+
+	return cloned
 }

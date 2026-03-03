@@ -19,10 +19,11 @@ CREATE TABLE IF NOT EXISTS openauth.auth (
 CREATE TABLE IF NOT EXISTS openauth.auth_event (
   id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
   auth_id UUID NOT NULL,
-  date_added TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  date_added TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   user_agent TEXT NOT NULL,
   ip_address INET NOT NULL,
-  login_status BOOLEAN NOT NULL,
+  event TEXT NOT NULL,
+  metadata JSONB NULL,
   error_message TEXT NULL,
   
   CONSTRAINT fk_auth_event_auth_id
