@@ -201,6 +201,40 @@ func newMigrateCommand() *cobra.Command {
 		},
 	})
 
+	migrateCmd.AddCommand(&cobra.Command{
+		Use:   "goto <version>",
+		Short: "Migrate schema to an exact version",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			version, err := parseGotoVersionArg(args[0])
+			if err != nil {
+				return err
+			}
+
+			runner, sourceURL, err := newMigrationRunner(cfg)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if closeErr := closeMigrationRunner(runner); closeErr != nil {
+					cmd.PrintErrf("warning: failed to close migration runner cleanly: %v\n", closeErr)
+				}
+			}()
+
+			if err := runner.Migrate(version); err != nil {
+				if errors.Is(err, migrate.ErrNoChange) {
+					cmd.Printf("Schema already at version %d.\n", version)
+					return nil
+				}
+
+				return fmt.Errorf("migrate to version %d: %w", version, err)
+			}
+
+			cmd.Printf("Migrated schema to version %d from %s\n", version, sourceURL)
+			return nil
+		},
+	})
+
 	return migrateCmd
 }
 
@@ -241,6 +275,14 @@ func parseForceVersionArg(arg string) (int, error) {
 		return 0, fmt.Errorf("invalid force version %q: expected an integer >= -1", arg)
 	}
 	return version, nil
+}
+
+func parseGotoVersionArg(arg string) (uint, error) {
+	version, err := strconv.ParseUint(strings.TrimSpace(arg), 10, strconv.IntSize)
+	if err != nil {
+		return 0, fmt.Errorf("invalid goto version %q: expected a non-negative integer", arg)
+	}
+	return uint(version), nil
 }
 
 func newMigrationRunner(cfg migrateConfig) (*migrate.Migrate, string, error) {
