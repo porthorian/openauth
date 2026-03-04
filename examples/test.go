@@ -7,10 +7,15 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"github.com/porthorian/openauth"
+	"github.com/porthorian/openauth/pkg/approach"
+	"github.com/porthorian/openauth/pkg/session"
+	sessionjwt "github.com/porthorian/openauth/pkg/session/jwt"
 )
 
 func main() {
+	ctx := context.Background()
 	dsn := os.Getenv("OPENAUTH_POSTGRES_DSN")
 	if dsn == "" {
 		log.Fatal("OPENAUTH_POSTGRES_DSN is required")
@@ -40,36 +45,99 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("client init error: %v", err)
 	}
 	defer func() {
-		if err := client.Close(); err != nil {
-			log.Printf("client close error: %v", err)
+		if closeErr := client.Close(); closeErr != nil {
+			log.Printf("client close error: %v", closeErr)
 		}
 	}()
 
-	log.Printf("Client initialized with configured runtime: %+v", client)
-	userID := "b8575451-3261-4ed3-a5ea-ae0d19724ebd"
-	pwd := "test1234"
-	log.Printf("Testing authorization for user ID: %s", userID)
-	ctx := context.Background()
-	err = client.CreateAuth(ctx, openauth.CreateAuthInput{
-		UserID: userID,
-		Value:  pwd,
+	jwtManager, err := sessionjwt.NewManager(sessionjwt.Config{
+		SigningKey: session.Key{
+			ID:        "example-v1",
+			Algorithm: "HS256",
+			Material:  []byte("replace-this-example-secret"),
+		},
+		Issuer:    "openauth.example",
+		Audience:  []string{"example-api"},
+		ClockSkew: 30 * time.Second,
 	})
 	if err != nil {
-		log.Printf("CreateAuth error: %v", err)
+		log.Fatalf("jwt manager init error: %v", err)
+	}
+
+	registeredUserID := uuid.NewString()
+	registeredPassword := "correct-horse-battery-staple"
+	err = client.CreateAuth(ctx, openauth.CreateAuthInput{
+		UserID: registeredUserID,
+		Value:  registeredPassword,
+	})
+	if err != nil {
+		log.Fatalf("create auth error: %v", err)
+	}
+	log.Printf("registered user=%s with password auth", registeredUserID)
+
+	incomingUserID := registeredUserID
+	incomingPassword := "correct-horse-battery-staple"
+	principal, err := client.Authorize(ctx, openauth.AuthInput{
+		UserID: incomingUserID,
+		Type:   openauth.InputTypePassword,
+		Value:  incomingPassword,
+	})
+	if err != nil {
+		log.Printf("authorization failed for user=%s", incomingUserID)
 		return
 	}
 
-	princ, err := client.Authorize(ctx, openauth.AuthInput{
-		UserID: userID,
-		Type:   openauth.InputTypePassword,
-		Value:  pwd,
+	token, err := jwtManager.IssueToken(ctx, principal.Subject, session.Claims{
+		"tenant": principal.Tenant,
+		"role":   "admin",
+	}, 15*time.Minute)
+	if err != nil {
+		log.Fatalf("issue token error: %v", err)
+	}
+	log.Printf("authorization successful for user=%s; jwt issued (len=%d)", principal.Subject, len(token))
+
+	directJWT, err := approach.NewDirectJWTHandler(approach.DirectJWTConfig{
+		Validator: jwtManager,
 	})
 	if err != nil {
-		log.Printf("Authorize error: %v", err)
-		return
+		log.Fatalf("direct jwt handler init error: %v", err)
 	}
-	log.Printf("Authorize result: %+v", princ)
+
+	registry, err := approach.NewRegistry(directJWT)
+	if err != nil {
+		log.Fatalf("approach registry init error: %v", err)
+	}
+
+	approachResult, err := registry.Validate(ctx, approach.NameDirectJWT, token)
+	if err != nil {
+		log.Fatalf("approach validation error: %v", err)
+	}
+
+	sessionID, err := jwtManager.IssueSession(ctx, approachResult.Subject, 24*time.Hour)
+	if err != nil {
+		log.Fatalf("issue session error: %v", err)
+	}
+
+	sessionValid, err := jwtManager.ValidateSession(ctx, sessionID)
+	if err != nil {
+		log.Fatalf("validate session error: %v", err)
+	}
+	if !sessionValid {
+		log.Fatalf("session was issued but is not valid")
+	}
+
+	log.Printf(
+		"principal subject=%s tenant=%s authenticated_at=%s approach=%s approach_subject=%s approach_tenant=%s approach_expires_at=%s",
+		principal.Subject,
+		principal.Tenant,
+		principal.AuthenticatedAt.Format(time.RFC3339),
+		directJWT.Name(),
+		approachResult.Subject,
+		approachResult.Tenant,
+		approachResult.ExpiresAt.Format(time.RFC3339),
+	)
+	log.Printf("issued session for subject=%s (len=%d)", approachResult.Subject, len(sessionID))
 }

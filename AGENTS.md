@@ -79,6 +79,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 ## Package Planning (Repo Layout)
 - `openauth.go` (root package `openauth`): public entry points and shared options; import path `github.com/porthorian/openauth`.
 - `pkg/session`: session manager, token verifier, key resolver interfaces.
+- `pkg/session/jwt`: JWT-based implementation of `TokenIssuer`, `TokenValidator`, and `SessionManager` with configurable key resolution and clock-skew validation.
 - `pkg/crypto/password`: password hashing contracts and implementations.
 - `pkg/approach`: strategy interfaces for direct JWT, opaque introspection, and Phantom Token flow.
 - `pkg/authz`: permission constants, role definitions, and bitwise authorization helpers.
@@ -102,7 +103,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - `pkg/storage/seeds`: shared seed conventions and documentation.
 - `cmd/openauth`: primary CLI entrypoint with `migrate up [steps]`, `migrate down <steps>`, and `migrate force <version>` subcommands.
 - OpenAuth CLI migrations must use a dedicated migration version table in the `openauth` schema (default `openauth.schema_migrations`) to avoid conflicts with other applications using `schema_migrations` in the same database.
-- `examples/test.go`: runnable auth example that initializes runtime dependencies and calls `Authorize` with `AuthInput`.
+- `examples/test.go`: runnable auth example that uses `NewDefault` + `CreateAuth` + `Authorize` for password login, issues JWT/session artifacts with `pkg/session/jwt`, and validates JWT through `pkg/approach`.
 - `pkg/errors`: typed errors and translation helpers.
 
 ## API Shape (Draft)
@@ -247,7 +248,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 
 ### Milestone 2: Core Auth Engine
 - Implement `Principal`, claims handling, context helpers.
-- Implement token/session validation interface and reference in-memory impl.
+- ~~Implement token/session validation interface and reference in-memory impl.~~
 - Implement password and access-token auth entrypoints.
 - Implement auth approach dispatcher for Direct JWT, Opaque Introspection, and Phantom Token.
 - ~~Implement bitwise role/permission model and authorization evaluation helpers.~~

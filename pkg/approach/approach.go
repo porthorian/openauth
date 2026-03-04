@@ -3,7 +3,15 @@ package approach
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
+)
+
+const (
+	NameDirectJWT           = "direct_jwt"
+	NameOpaqueIntrospection = "opaque_introspection"
+	NamePhantomToken        = "phantom_token"
 )
 
 type Result struct {
@@ -23,9 +31,11 @@ type Registry struct {
 }
 
 var (
-	ErrNilHandler    = errors.New("approach: handler is nil")
-	ErrEmptyName     = errors.New("approach: handler name is empty")
-	ErrDuplicateName = errors.New("approach: handler already exists")
+	ErrNilHandler      = errors.New("approach: handler is nil")
+	ErrNilRegistry     = errors.New("approach: registry is nil")
+	ErrEmptyName       = errors.New("approach: handler name is empty")
+	ErrDuplicateName   = errors.New("approach: handler already exists")
+	ErrHandlerNotFound = errors.New("approach: handler not found")
 )
 
 func NewRegistry(handlers ...Handler) (*Registry, error) {
@@ -47,7 +57,7 @@ func (r *Registry) Register(handler Handler) error {
 		return ErrNilHandler
 	}
 
-	name := handler.Name()
+	name := strings.TrimSpace(handler.Name())
 	if name == "" {
 		return ErrEmptyName
 	}
@@ -61,6 +71,24 @@ func (r *Registry) Register(handler Handler) error {
 }
 
 func (r *Registry) Handler(name string) (Handler, bool) {
-	handler, ok := r.handlers[name]
+	handler, ok := r.handlers[strings.TrimSpace(name)]
 	return handler, ok
+}
+
+func (r *Registry) Validate(ctx context.Context, name string, token string) (Result, error) {
+	if r == nil {
+		return Result{}, ErrNilRegistry
+	}
+
+	approachName := strings.TrimSpace(name)
+	if approachName == "" {
+		return Result{}, ErrEmptyName
+	}
+
+	handler, ok := r.Handler(approachName)
+	if !ok {
+		return Result{}, fmt.Errorf("%w: %s", ErrHandlerNotFound, approachName)
+	}
+
+	return handler.Validate(ctx, token)
 }
