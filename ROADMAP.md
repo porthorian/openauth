@@ -15,16 +15,16 @@ This roadmap describes planned delivery for OpenAuth and keeps implementation pr
 ## Milestones
 1. Foundation
 - Finalize package layout and interface taxonomy.
-- Define persistence and cache contracts.
-- Establish migration and seeding conventions.
-- Set transparency artifacts (roadmap, compatibility, release and security docs).
+- ~~Define persistence and cache contracts.~~
+- ~~Establish migration and seeding conventions.~~
+- ~~Set transparency artifacts (roadmap, compatibility, release and security docs).~~
 
 2. Core Auth Engine
 - Implement auth entrypoints: `Authorize`, `CreateAuth`, and `ValidateToken`.
 - Map auth method profiles (Basic, Bearer, JWT, OIDC) onto those entrypoints.
 - Implement approaches: DirectJWT, OpaqueIntrospection, PhantomToken.
 - Implement persistence policy matrix by auth profile (authority boundary, cache role, and failure mode).
-- Implement bitwise role/permission model.
+- ~~Implement bitwise role/permission model.~~
 - Implement PostgreSQL and SQLite source-of-truth adapters.
 - Implement Redis and memory cache adapters.
 
@@ -38,7 +38,7 @@ This roadmap describes planned delivery for OpenAuth and keeps implementation pr
 
 5. OAuth Adapter
 - Add OAuth2/OIDC contracts and validation/introspection integrations.
-- Add discovery and JWKS abstractions.
+- ~~Add discovery and JWKS abstractions.~~
 
 6. SAML Adapter
 - Add SAML contracts and assertion validation flow.
@@ -47,7 +47,7 @@ This roadmap describes planned delivery for OpenAuth and keeps implementation pr
 7. Hardening and Documentation
 - Complete threat model and hardening checklist.
 - Publish migration guides and complete examples.
-- Maintain compatibility policy and release playbook.
+- ~~Maintain compatibility policy and release playbook.~~
 
 ## Adoption Targets
 - Public examples for all supported entrypoints/approaches compile in CI.

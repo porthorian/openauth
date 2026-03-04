@@ -236,12 +236,12 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 
 ### Milestone 1: Foundation
 - Finalize package layout.
-- Define foundational interfaces and error taxonomy.
-- Define persistence contracts and source-of-truth adapter compatibility requirements.
-- Define cache contracts and cache invalidation/versioning requirements.
-- Define and document credential ownership boundary (application-managed username identity mapping, OpenAuth-managed hashed auth material + subject/session artifacts).
-- Select migration mechanism and define migration file conventions.
-- Define seed framework conventions and idempotency requirements.
+- ~~Define foundational interfaces and error taxonomy.~~
+- ~~Define persistence contracts and source-of-truth adapter compatibility requirements.~~
+- ~~Define cache contracts and cache invalidation/versioning requirements.~~
+- ~~Define and document credential ownership boundary (application-managed username identity mapping, OpenAuth-managed hashed auth material + subject/session artifacts).~~
+- ~~Select migration mechanism and define migration file conventions.~~
+- ~~Define seed framework conventions and idempotency requirements.~~
 - Add CI checks (test, lint, vet).
 - Add architecture decision record (ADR) template.
 
@@ -250,7 +250,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Implement token/session validation interface and reference in-memory impl.
 - Implement password and access-token auth entrypoints.
 - Implement auth approach dispatcher for Direct JWT, Opaque Introspection, and Phantom Token.
-- Implement bitwise role/permission model and authorization evaluation helpers.
+- ~~Implement bitwise role/permission model and authorization evaluation helpers.~~
 - Implement initial storage schema migration set and seed pipeline.
 - Implement unified auth-material persistence adapters with subject linkage (no username storage tables).
 - Implement PostgreSQL and SQLite adapters against shared persistence contracts.
@@ -269,14 +269,14 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Add end-to-end tests with test gRPC service.
 
 ### Milestone 5: OAuth Adapter
-- Define OAuth2/OIDC adapter contracts.
+- ~~Define OAuth2/OIDC adapter contracts.~~
 - Implement token validation/introspection flow with provider-agnostic interfaces.
-- Add OIDC discovery and JWKS resolver abstractions.
+- ~~Add OIDC discovery and JWKS resolver abstractions.~~
 - Add Phantom Token integration guidance and internal-token validation profile.
 - Add claim normalization and mapping tests.
 
 ### Milestone 6: SAML Adapter
-- Define SAML adapter contracts.
+- ~~Define SAML adapter contracts.~~
 - Implement request/response validation path with selected SAML library.
 - Add conformance tests for assertion parsing and claim mapping.
 
@@ -284,8 +284,8 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Threat-model review and security checklist.
 - Benchmark critical paths.
 - Write migration/integration guides and full examples.
-- Publish compatibility/deprecation policy and release playbook.
-- Publish contributor and security disclosure documentation.
+- ~~Publish compatibility/deprecation policy and release playbook.~~
+- ~~Publish contributor and security disclosure documentation.~~
 
 ## Quality Gates
 - Unit test coverage for foundational packages >= 95%.
