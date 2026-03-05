@@ -1,9 +1,13 @@
 package grpctransport
 
-import "context"
+import (
+	"context"
+
+	"github.com/porthorian/openauth"
+)
 
 type TokenValidator interface {
-	Validate(ctx context.Context, token string) (any, error)
+	Validate(ctx context.Context, token string) (openauth.Principal, error)
 }
 
 type UnaryHandler func(ctx context.Context, req any) (any, error)

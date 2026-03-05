@@ -173,6 +173,19 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Opaque Introspection: application sends opaque access token to configured introspection endpoint and maps response to `Principal`.
 - Phantom Token: edge/gateway accepts external token, validates/introspects it, then forwards a short-lived internal JWT ("phantom") to services; services validate phantom token locally.
 - The same access-token auth entrypoint can run on different approaches based on service configuration.
+- Approach selection guidance:
+  - Direct JWT:
+    - use when services can validate tokens locally and need low per-request latency
+    - best fit when key distribution/JWKS rotation is manageable in-service
+    - avoid as primary model when immediate global revocation is required without additional controls
+  - Opaque Introspection:
+    - use when authorization decisions must stay centralized at an external authority
+    - best fit when token revocation and policy changes must take effect immediately
+    - tradeoff is network dependency and higher per-request latency to introspection authority
+  - Phantom Token:
+    - use when an edge/gateway can own external token validation and mint short-lived internal tokens
+    - best fit for microservice environments that need local JWT validation behind a strict trust boundary
+    - requires clear gateway trust, short internal TTLs, and strict audience scoping
 
 ## Storage, Migration, and Seeding (v0)
 - Define backend-agnostic persistence contracts and require interchangeability across PostgreSQL and SQLite.
@@ -250,7 +263,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Implement `Principal`, claims handling, context helpers.
 - ~~Implement token/session validation interface and reference in-memory impl.~~
 - Implement password and access-token auth entrypoints.
-- Implement auth approach dispatcher for Direct JWT, Opaque Introspection, and Phantom Token.
+- ~~Implement auth approach dispatcher for Direct JWT, Opaque Introspection, and Phantom Token.~~
 - ~~Implement bitwise role/permission model and authorization evaluation helpers.~~
 - Implement initial storage schema migration set and seed pipeline.
 - Implement unified auth-material persistence adapters with subject linkage (no username storage tables).
@@ -260,8 +273,8 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Add unit tests for validation behavior and edge cases.
 
 ### Milestone 3: HTTP Adapter
-- Implement middleware for auth extraction/validation.
-- Support bearer token and secure cookie strategies.
+- ~~Implement middleware for auth extraction/validation.~~
+- ~~Support bearer token and secure cookie strategies.~~
 - Add examples for `net/http` and common router usage.
 
 ### Milestone 4: gRPC Adapter

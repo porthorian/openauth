@@ -23,14 +23,14 @@ This roadmap describes planned delivery for OpenAuth and keeps implementation pr
 - Implement auth entrypoints: `Authorize`, `CreateAuth`, and `ValidateToken`.
 - Map auth method profiles (Basic, Bearer, JWT, OIDC) onto those entrypoints.
 - ~~Implement JWT token/session manager under `pkg/session/jwt` conforming to `pkg/session` contracts.~~
-- Implement approaches: DirectJWT, OpaqueIntrospection, PhantomToken.
+- ~~Implement approaches: DirectJWT, OpaqueIntrospection, PhantomToken.~~
 - Implement persistence policy matrix by auth profile (authority boundary, cache role, and failure mode).
 - ~~Implement bitwise role/permission model.~~
 - Implement PostgreSQL and SQLite source-of-truth adapters.
 - Implement Redis and memory cache adapters.
 
 3. HTTP Adapter
-- Add HTTP middleware and context helpers.
+- ~~Add HTTP middleware and context helpers.~~
 - Add transport examples.
 
 4. gRPC Adapter

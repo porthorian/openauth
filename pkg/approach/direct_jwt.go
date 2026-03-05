@@ -116,6 +116,26 @@ func claimString(claims session.Claims, key string) (string, bool) {
 	}
 }
 
+func claimBool(claims session.Claims, key string) (bool, bool) {
+	raw, found := claims[key]
+	if !found {
+		return false, false
+	}
+
+	switch typed := raw.(type) {
+	case bool:
+		return typed, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(typed))
+		if err != nil {
+			return false, false
+		}
+		return parsed, true
+	default:
+		return false, false
+	}
+}
+
 func claimUnixTime(claims session.Claims, key string) (time.Time, error) {
 	raw, found := claims[key]
 	if !found {
