@@ -17,6 +17,14 @@ type staticValidator struct {
 	token     string
 }
 
+type staticPermissionChecker struct {
+	allPermissionAllowed bool
+	anyPermissionAllowed bool
+	allRoleAllowed       bool
+	anyRoleAllowed       bool
+	err                  error
+}
+
 func (v *staticValidator) Validate(ctx context.Context, token string) (openauth.Principal, error) {
 	_ = ctx
 	v.called = true
@@ -25,6 +33,42 @@ func (v *staticValidator) Validate(ctx context.Context, token string) (openauth.
 		return openauth.Principal{}, v.err
 	}
 	return v.principal, nil
+}
+
+func (c staticPermissionChecker) HasAllPermissions(principal openauth.Principal, permissionKeys ...string) (bool, error) {
+	_ = principal
+	_ = permissionKeys
+	if c.err != nil {
+		return false, c.err
+	}
+	return c.allPermissionAllowed, nil
+}
+
+func (c staticPermissionChecker) HasAnyPermissions(principal openauth.Principal, permissionKeys ...string) (bool, error) {
+	_ = principal
+	_ = permissionKeys
+	if c.err != nil {
+		return false, c.err
+	}
+	return c.anyPermissionAllowed, nil
+}
+
+func (c staticPermissionChecker) HasAllRoles(principal openauth.Principal, roleKeys ...string) (bool, error) {
+	_ = principal
+	_ = roleKeys
+	if c.err != nil {
+		return false, c.err
+	}
+	return c.allRoleAllowed, nil
+}
+
+func (c staticPermissionChecker) HasAnyRoles(principal openauth.Principal, roleKeys ...string) (bool, error) {
+	_ = principal
+	_ = roleKeys
+	if c.err != nil {
+		return false, c.err
+	}
+	return c.anyRoleAllowed, nil
 }
 
 func TestMiddlewareBearerSuccess(t *testing.T) {
@@ -224,5 +268,208 @@ func TestPrincipalFromContextTypeMismatch(t *testing.T) {
 	_, ok := PrincipalFromContext(ctx)
 	if ok {
 		t.Fatalf("expected type mismatch to return ok=false")
+	}
+}
+
+func TestRequireAllPermissionsAllowsRequest(t *testing.T) {
+	checker := staticPermissionChecker{allPermissionAllowed: true}
+	nextCalled := false
+	handler := RequireAllPermissions(checker, "perm.read")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if !nextCalled {
+		t.Fatalf("expected next handler to be called")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAllPermissionsRejectsForbidden(t *testing.T) {
+	checker := staticPermissionChecker{allPermissionAllowed: false}
+	handler := RequireAllPermissions(checker, "perm.read")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAnyPermissionsRejectsMissingPrincipal(t *testing.T) {
+	checker := staticPermissionChecker{anyPermissionAllowed: true}
+	handler := RequireAnyPermissions(checker, "perm.read")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAllRolesAllowsRequest(t *testing.T) {
+	checker := staticPermissionChecker{allRoleAllowed: true}
+	nextCalled := false
+	handler := RequireAllRoles(checker, "viewer")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if !nextCalled {
+		t.Fatalf("expected next handler to be called")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAllRolesRejectsForbidden(t *testing.T) {
+	checker := staticPermissionChecker{allRoleAllowed: false}
+	handler := RequireAllRoles(checker, "viewer")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAnyRolesRejectsMissingPrincipal(t *testing.T) {
+	checker := staticPermissionChecker{anyRoleAllowed: true}
+	handler := RequireAnyRoles(checker, "viewer")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAnyRolesReturnsInternalOnCheckerError(t *testing.T) {
+	checker := staticPermissionChecker{err: errors.New("checker failed")}
+	handler := RequireAnyRoles(checker, "viewer")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAnyRoleOrPermissionAllowsByRole(t *testing.T) {
+	checker := staticPermissionChecker{
+		anyRoleAllowed:       true,
+		anyPermissionAllowed: false,
+	}
+	nextCalled := false
+	handler := RequireAnyRoleOrPermission(checker, []string{"viewer"}, []string{"perm.write"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if !nextCalled {
+		t.Fatalf("expected next handler to be called")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAnyRoleOrPermissionAllowsByPermission(t *testing.T) {
+	checker := staticPermissionChecker{
+		anyRoleAllowed:       false,
+		anyPermissionAllowed: true,
+	}
+	nextCalled := false
+	handler := RequireAnyRoleOrPermission(checker, []string{"admin"}, []string{"perm.read"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if !nextCalled {
+		t.Fatalf("expected next handler to be called")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAnyRoleOrPermissionRejectsForbidden(t *testing.T) {
+	checker := staticPermissionChecker{
+		anyRoleAllowed:       false,
+		anyPermissionAllowed: false,
+	}
+	handler := RequireAnyRoleOrPermission(checker, []string{"admin"}, []string{"perm.write"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("unexpected status code: %d", rr.Code)
+	}
+}
+
+func TestRequireAnyRoleOrPermissionRejectsEmptyConfiguration(t *testing.T) {
+	checker := staticPermissionChecker{}
+	handler := RequireAnyRoleOrPermission(checker, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), openauth.Principal{Subject: "user-1"}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("unexpected status code: %d", rr.Code)
 	}
 }

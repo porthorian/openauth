@@ -8,30 +8,31 @@ import (
 )
 
 const (
-	putAuthUserQuery = `
-INSERT INTO openauth.auth_user (
-  id, auth_id, user_id, date_added
-) VALUES ($1, $2, $3, $4)
+	putSubjectAuthQuery = `
+INSERT INTO openauth.subject_auth (
+  id, auth_id, subject, date_added, date_modified
+) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (auth_id) DO UPDATE
 SET
-  user_id = EXCLUDED.user_id
+  subject = EXCLUDED.subject,
+  date_modified = EXCLUDED.date_modified
 `
 
-	listAuthUserByUserIDQuery = `
+	listSubjectAuthBySubjectQuery = `
 SELECT
-  id, date_added, auth_id, user_id
-FROM openauth.auth_user
-WHERE user_id = $1
+  id::text, date_added, auth_id::text, subject
+FROM openauth.subject_auth
+WHERE subject = $1
 `
 
-	listAuthUserByAuthIDQuery = `
+	listSubjectAuthByAuthIDQuery = `
 SELECT
-  id, date_added, auth_id, user_id
-FROM openauth.auth_user
+  id::text, date_added, auth_id::text, subject
+FROM openauth.subject_auth
 WHERE auth_id = $1
 `
 
-	deleteAuthUserQuery = `DELETE FROM openauth.auth_user WHERE id = $1`
+	deleteSubjectAuthQuery = `DELETE FROM openauth.subject_auth WHERE id = $1`
 )
 
 func (a *Adapter) PutSubjectAuth(ctx context.Context, record storage.SubjectAuthRecord) error {
@@ -44,8 +45,13 @@ func (a *Adapter) PutSubjectAuth(ctx context.Context, record storage.SubjectAuth
 		dateAdded = time.Now().UTC()
 	}
 
+	dateModified := time.Now().UTC()
+	if record.DateModified != nil {
+		dateModified = record.DateModified.UTC()
+	}
+
 	if a.tx != nil {
-		stmt := a.tx.StmtContext(ctx, a.stmts.putAuthUser)
+		stmt := a.tx.StmtContext(ctx, a.stmts.putSubjectAuth)
 		defer stmt.Close()
 		_, err := stmt.ExecContext(
 			ctx,
@@ -53,16 +59,18 @@ func (a *Adapter) PutSubjectAuth(ctx context.Context, record storage.SubjectAuth
 			record.AuthID,
 			record.Subject,
 			dateAdded,
+			dateModified,
 		)
 		return err
 	}
 
-	_, err := a.stmts.putAuthUser.ExecContext(
+	_, err := a.stmts.putSubjectAuth.ExecContext(
 		ctx,
 		record.ID,
 		record.AuthID,
 		record.Subject,
 		dateAdded,
+		dateModified,
 	)
 	return err
 }
@@ -72,7 +80,7 @@ func (a *Adapter) ListSubjectAuthBySubject(ctx context.Context, subject string) 
 		return nil, err
 	}
 
-	rows, err := a.stmts.listAuthUserByUserID.QueryContext(ctx, subject)
+	rows, err := a.stmts.listSubjectAuthBySubject.QueryContext(ctx, subject)
 	if err != nil {
 		return nil, err
 	}
@@ -80,13 +88,12 @@ func (a *Adapter) ListSubjectAuthBySubject(ctx context.Context, subject string) 
 
 	records := []storage.SubjectAuthRecord{}
 	for rows.Next() {
-		record, err := scanSubjectAuth(rows)
-		if err != nil {
-			return nil, err
+		record, scanErr := scanSubjectAuth(rows)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		records = append(records, record)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -99,7 +106,7 @@ func (a *Adapter) ListSubjectAuthByAuthID(ctx context.Context, authID string) ([
 		return nil, err
 	}
 
-	rows, err := a.stmts.listAuthUserByAuthID.QueryContext(ctx, authID)
+	rows, err := a.stmts.listSubjectAuthByAuthID.QueryContext(ctx, authID)
 	if err != nil {
 		return nil, err
 	}
@@ -107,13 +114,12 @@ func (a *Adapter) ListSubjectAuthByAuthID(ctx context.Context, authID string) ([
 
 	records := []storage.SubjectAuthRecord{}
 	for rows.Next() {
-		record, err := scanSubjectAuth(rows)
-		if err != nil {
-			return nil, err
+		record, scanErr := scanSubjectAuth(rows)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		records = append(records, record)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -127,13 +133,13 @@ func (a *Adapter) DeleteSubjectAuth(ctx context.Context, id string) error {
 	}
 
 	if a.tx != nil {
-		stmt := a.tx.StmtContext(ctx, a.stmts.deleteAuthUserByID)
+		stmt := a.tx.StmtContext(ctx, a.stmts.deleteSubjectAuthByID)
 		defer stmt.Close()
 		_, err := stmt.ExecContext(ctx, id)
 		return err
 	}
 
-	_, err := a.stmts.deleteAuthUserByID.ExecContext(ctx, id)
+	_, err := a.stmts.deleteSubjectAuthByID.ExecContext(ctx, id)
 	return err
 }
 
@@ -153,6 +159,5 @@ func scanSubjectAuth(s scanner) (storage.SubjectAuthRecord, error) {
 	record.DateModified = nil
 	record.AuthID = authID
 	record.Subject = subject
-
 	return record, nil
 }

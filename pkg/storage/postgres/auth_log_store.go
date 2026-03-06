@@ -3,33 +3,31 @@ package postgres
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/porthorian/openauth/pkg/storage"
 )
 
 const (
-	putAuthEventQuery = `
-INSERT INTO openauth.auth_event (
-  auth_id, date_added, user_agent, ip_address, event, metadata, error_message
+	putAuthLogQuery = `
+INSERT INTO openauth.auth_log (
+  id, auth_id, subject, event, occurred_at, date_added, metadata
 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
-	listAuthEventByAuthIDQuery = `
+	listAuthLogByAuthIDQuery = `
 SELECT
-  id, date_added, auth_id::text, event, metadata
-FROM openauth.auth_event
+  id::text, date_added, auth_id::text, subject, event, occurred_at, metadata
+FROM openauth.auth_log
 WHERE auth_id = $1
 ORDER BY date_added ASC
 `
 
-	listAuthEventBySubjectQuery = `
+	listAuthLogBySubjectQuery = `
 SELECT
-  id, date_added, auth_id::text, event, metadata
-FROM openauth.auth_event
-WHERE metadata ->> 'subject' = $1
+  id::text, date_added, auth_id::text, subject, event, occurred_at, metadata
+FROM openauth.auth_log
+WHERE subject = $1
 ORDER BY date_added ASC
 `
 )
@@ -41,34 +39,7 @@ func (a *Adapter) PutAuthLog(ctx context.Context, record storage.AuthLogRecord) 
 
 	dateAdded := record.DateAdded
 	if dateAdded.IsZero() {
-		if !record.OccurredAt.IsZero() {
-			dateAdded = record.OccurredAt.UTC()
-		} else {
-			dateAdded = time.Now().UTC()
-		}
-	}
-
-	metadata := cloneStringMap(record.Metadata)
-	if metadata == nil {
-		metadata = map[string]string{}
-	}
-
-	userAgent := "openauth"
-	if value := strings.TrimSpace(metadata["user_agent"]); value != "" {
-		userAgent = value
-	}
-
-	ipAddress := "0.0.0.0"
-	if value := strings.TrimSpace(metadata["ip_address"]); value != "" {
-		ipAddress = value
-	}
-
-	event := strings.TrimSpace(string(record.Event))
-	if event == "" {
-		event = strings.TrimSpace(metadata["event"])
-	}
-	if event == "" {
-		event = string(storage.AuthLogEventUsed)
+		dateAdded = time.Now().UTC()
 	}
 
 	occurredAt := record.OccurredAt
@@ -76,51 +47,28 @@ func (a *Adapter) PutAuthLog(ctx context.Context, record storage.AuthLogRecord) 
 		occurredAt = dateAdded
 	}
 
-	metadata["occurred_at"] = occurredAt.UTC().Format(time.RFC3339Nano)
-	if subject := strings.TrimSpace(record.Subject); subject != "" {
-		metadata["subject"] = subject
+	event := string(record.Event)
+	if event == "" {
+		event = string(storage.AuthLogEventUsed)
 	}
 
-	var errorMessage any
-	if msg := strings.TrimSpace(metadata["error_message"]); msg != "" {
-		errorMessage = msg
+	metadata := cloneStringMap(record.Metadata)
+	if metadata == nil {
+		metadata = map[string]string{}
 	}
-	delete(metadata, "user_agent")
-	delete(metadata, "ip_address")
-	delete(metadata, "event")
-	delete(metadata, "error_message")
-
-	metadataJSON, err := json.Marshal(metadata)
+	metadataRaw, err := json.Marshal(metadata)
 	if err != nil {
 		return err
 	}
 
 	if a.tx != nil {
-		stmt := a.tx.StmtContext(ctx, a.stmts.putAuthEvent)
+		stmt := a.tx.StmtContext(ctx, a.stmts.putAuthLog)
 		defer stmt.Close()
-		_, err := stmt.ExecContext(
-			ctx,
-			record.AuthID,
-			dateAdded,
-			userAgent,
-			ipAddress,
-			event,
-			metadataJSON,
-			errorMessage,
-		)
+		_, err := stmt.ExecContext(ctx, record.ID, record.AuthID, record.Subject, event, occurredAt, dateAdded, metadataRaw)
 		return err
 	}
 
-	_, err = a.stmts.putAuthEvent.ExecContext(
-		ctx,
-		record.AuthID,
-		dateAdded,
-		userAgent,
-		ipAddress,
-		event,
-		metadataJSON,
-		errorMessage,
-	)
+	_, err = a.stmts.putAuthLog.ExecContext(ctx, record.ID, record.AuthID, record.Subject, event, occurredAt, dateAdded, metadataRaw)
 	return err
 }
 
@@ -129,7 +77,7 @@ func (a *Adapter) ListAuthLogsByAuthID(ctx context.Context, authID string) ([]st
 		return nil, err
 	}
 
-	rows, err := a.stmts.listAuthEventByAuthID.QueryContext(ctx, authID)
+	rows, err := a.stmts.listAuthLogByAuthID.QueryContext(ctx, authID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,13 +85,12 @@ func (a *Adapter) ListAuthLogsByAuthID(ctx context.Context, authID string) ([]st
 
 	records := []storage.AuthLogRecord{}
 	for rows.Next() {
-		record, err := scanAuthEvent(rows)
-		if err != nil {
-			return nil, err
+		record, scanErr := scanAuthLog(rows)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		records = append(records, record)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -156,7 +103,7 @@ func (a *Adapter) ListAuthLogsBySubject(ctx context.Context, subject string) ([]
 		return nil, err
 	}
 
-	rows, err := a.stmts.listAuthEventBySubject.QueryContext(ctx, subject)
+	rows, err := a.stmts.listAuthLogBySubject.QueryContext(ctx, subject)
 	if err != nil {
 		return nil, err
 	}
@@ -164,16 +111,12 @@ func (a *Adapter) ListAuthLogsBySubject(ctx context.Context, subject string) ([]
 
 	records := []storage.AuthLogRecord{}
 	for rows.Next() {
-		record, err := scanAuthEvent(rows)
-		if err != nil {
-			return nil, err
-		}
-		if record.Subject != subject {
-			continue
+		record, scanErr := scanAuthLog(rows)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		records = append(records, record)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -181,11 +124,12 @@ func (a *Adapter) ListAuthLogsBySubject(ctx context.Context, subject string) ([]
 	return records, nil
 }
 
-func scanAuthEvent(s scanner) (storage.AuthLogRecord, error) {
+func scanAuthLog(s scanner) (storage.AuthLogRecord, error) {
 	var (
 		record      storage.AuthLogRecord
 		dateAdded   time.Time
 		event       string
+		occurredAt  time.Time
 		metadataRaw []byte
 	)
 
@@ -193,75 +137,28 @@ func scanAuthEvent(s scanner) (storage.AuthLogRecord, error) {
 		&record.ID,
 		&dateAdded,
 		&record.AuthID,
+		&record.Subject,
 		&event,
+		&occurredAt,
 		&metadataRaw,
 	); err != nil {
 		return storage.AuthLogRecord{}, err
 	}
 
 	record.DateAdded = dateAdded.UTC()
-	record.OccurredAt = record.DateAdded
+	record.Event = storage.AuthLogEvent(event)
+	record.OccurredAt = occurredAt.UTC()
 	record.Metadata = map[string]string{}
-
-	if len(metadataRaw) > 0 {
-		decodedMetadata, err := decodeAuthEventMetadata(metadataRaw)
-		if err != nil {
-			return storage.AuthLogRecord{}, err
-		}
-		for key, value := range decodedMetadata {
-			record.Metadata[key] = value
-		}
+	if len(metadataRaw) == 0 {
+		return record, nil
 	}
 
-	if subject := strings.TrimSpace(record.Metadata["subject"]); subject != "" {
-		record.Subject = subject
+	decoded := map[string]string{}
+	if err := json.Unmarshal(metadataRaw, &decoded); err != nil {
+		return storage.AuthLogRecord{}, err
 	}
-
-	record.Event = storage.AuthLogEvent(strings.TrimSpace(event))
-	if record.Event == "" {
-		if metadataEvent := strings.TrimSpace(record.Metadata["event"]); metadataEvent != "" {
-			record.Event = storage.AuthLogEvent(metadataEvent)
-		}
-	}
-
-	if occurredAtRaw := strings.TrimSpace(record.Metadata["occurred_at"]); occurredAtRaw != "" {
-		parsed, err := time.Parse(time.RFC3339Nano, occurredAtRaw)
-		if err == nil {
-			record.OccurredAt = parsed.UTC()
-		}
-	}
-
+	record.Metadata = decoded
 	return record, nil
-}
-
-func decodeAuthEventMetadata(raw []byte) (map[string]string, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
-
-	typed := map[string]string{}
-	if err := json.Unmarshal(raw, &typed); err == nil {
-		return typed, nil
-	}
-
-	anyTyped := map[string]any{}
-	if err := json.Unmarshal(raw, &anyTyped); err != nil {
-		return nil, err
-	}
-
-	decoded := make(map[string]string, len(anyTyped))
-	for key, value := range anyTyped {
-		switch typedValue := value.(type) {
-		case nil:
-			continue
-		case string:
-			decoded[key] = typedValue
-		default:
-			decoded[key] = fmt.Sprint(typedValue)
-		}
-	}
-
-	return decoded, nil
 }
 
 func cloneStringMap(input map[string]string) map[string]string {
@@ -273,6 +170,5 @@ func cloneStringMap(input map[string]string) map[string]string {
 	for key, value := range input {
 		cloned[key] = value
 	}
-
 	return cloned
 }

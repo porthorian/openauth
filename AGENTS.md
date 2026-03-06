@@ -112,17 +112,27 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
   - `CreateAuth(ctx, input) error`
   - `ValidateToken(ctx, token) (Principal, error)`
 - `Authenticator` is auth-only; token/session revocation flows are handled outside this interface.
+- `AuthorizationManager` interface:
+  - `SetSubjectRoles(ctx, input) error`
+  - `SetSubjectPermissionOverrides(ctx, input) error`
+- `AuthorizationChecker` interface:
+  - role checks: `HasAllRoles`, `HasAnyRoles`, `RequireAllRoles`, `RequireAnyRoles`
+  - permission checks: `HasAllPermissions`, `HasAnyPermissions`, `RequireAllPermissions`, `RequireAnyPermissions`
 - `Config`:
   - `AuthStore`, `AuthdStore`, `CacheStore`, `Logger`, `Hasher`, `PolicyMatrix`, `DefaultPolicy`
+  - `Authorization.Registry` (app-defined permission/role catalog with explicit bit indices)
+  - `Authorization.DefaultTenant`
+  - `ApproachRegistry` + `DefaultTokenApproach` for access-token validation paths
   - `Runtime.Storage.Backend` + backend-specific connection settings (starting with PostgreSQL DSN/driver/pool/ping options)
   - `Runtime.Cache.Backend` + backend-specific cache settings (`memory` and `redis` in v0)
   - `Runtime.KeyStore.Backend` + backend-specific keystore connection settings
 - `Client`:
-  - `New(auth, config)` initializes configured runtime resources and uses explicit authenticator
-  - `NewDefault(config)` initializes configured runtime resources and builds `AuthService` from resolved config
+  - `New(config, build)` initializes configured runtime resources and constructs the client from an explicit dependency bundle returned by `build` (`Authenticator`, `AuthorizationManager`, `AuthorizationChecker`)
+  - `NewDefault(config)` delegates to `New` and explicitly wires `AuthService` into all client dependency fields
+  - client construction does not infer optional authz capabilities via type assertions
   - `Close() error` closes resources initialized from runtime config
 - `AuthInput`:
-  - `UserID`, `Type`, `Value`, `Metadata`
+  - `UserID`, `Tenant`, `Type`, `Value`, `Metadata`
 - `InputType`:
   - `password`, `token`
 - `CreateAuthInput`:
@@ -155,6 +165,8 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
   - `Policy(profile) (PersistencePolicy, bool)`
 - `Storage` contracts (source of truth):
   - `AuthStore`, `SubjectAuthStore`, `SessionStore`, `RoleStore`, `PermissionStore`, `AuthLogStore`
+  - `RoleStore` persists subject role keys with replace-set semantics (`ReplaceSubjectRoles`, `ListSubjectRoles`)
+  - `PermissionStore` persists subject permission overrides (`grant`/`deny`) with replace-set semantics (`ReplaceSubjectPermissionOverrides`, `ListSubjectPermissionOverrides`)
   - optional `AuthMaterialTransactor` for atomic multi-store auth writes (`WithAuthMaterialTx`)
   - implemented by `Postgres` and `SQLite` adapters
 - `Password` contracts:
@@ -167,6 +179,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
   - `TokenCache`, `PrincipalCache`, `PermissionCache`
   - implemented by `Redis` and `Memory` adapters
 - Transport adapters call the same `Authenticator` core interface.
+- HTTP middleware exposes role guards, permission guards, and combined role-or-permission guards on principal context.
 
 ## Authentication Approaches (v0)
 - Direct JWT: application validates client-presented JWT locally with configured key resolver/JWKS.
@@ -209,9 +222,10 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Support startup policy options: migration-only, seed-only, or migrate-then-seed.
 
 ## Authorization Model (Bitwise RBAC)
-- `PermissionMask` uses `uint64` where each permission is one bit flag.
-- `RoleMask` uses `uint64`; each role maps to a pre-defined permission mask.
-- Effective permissions are computed by bitwise OR across assigned roles and direct grants.
+- `PermissionMask` uses fixed 512-bit representation (`[8]uint64`) with explicit permission bit indices (`0..511`) from the application registry.
+- `RoleMask` uses fixed 512-bit representation (`[8]uint64`) with explicit role bit indices (`0..511`) from the application registry.
+- Roles are app-defined and support multi-level inheritance; cycles fail registry compilation at startup.
+- Effective permissions are computed by `(role grants OR direct grants) AND NOT direct denies`.
 - Authorization checks use bitwise AND and compare against required permissions.
 - Default policy is deny when required permission bits are not fully present.
 - Example semantics:
@@ -278,9 +292,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Add examples for `net/http` and common router usage.
 
 ### Milestone 4: gRPC Adapter
-- Implement unary and stream interceptors.
-- Map auth failures to canonical gRPC status codes.
-- Add end-to-end tests with test gRPC service.
+- Deferred for current phase.
 
 ### Milestone 5: OAuth Adapter
 - ~~Define OAuth2/OIDC adapter contracts.~~
@@ -322,7 +334,7 @@ Public API and domain interfaces depend on abstractions only. Adapters depend on
 - Basic credential representation in unified auth table: material-type specific metadata shape + hash algorithm parameters (recommended: Argon2id).
 - Approach support in v0: include all three approaches by default or ship Phantom Token as optional adapter.
 - Phantom token issuer responsibility: API gateway only vs gateway plus sidecar patterns.
-- Permission mask size for v0: `uint32` vs `uint64` (default `uint64`).
+- Permission and role mask size for v0: fixed 512-bit (`[8]uint64`) with explicit app-assigned bits.
 - Source of role definitions: static compile-time constants vs configurable role registry.
 - Storage abstraction depth: minimal session/user interfaces vs richer repository pattern.
 - Migration tooling choice: `golang-migrate` for v0 CLI and migration conventions.

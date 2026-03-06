@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/porthorian/openauth/pkg/approach"
 	"github.com/porthorian/openauth/pkg/session"
 	sessionjwt "github.com/porthorian/openauth/pkg/session/jwt"
+	httptransport "github.com/porthorian/openauth/pkg/transport/http"
 )
 
 func main() {
@@ -23,6 +26,19 @@ func main() {
 
 	client, err := openauth.NewDefault(openauth.Config{
 		Logger: logr.Discard(),
+		Authorization: openauth.AuthorizationConfig{
+			DefaultTenant: "example-tenant",
+			Registry: openauth.AuthorizationRegistry{
+				Permissions: []openauth.PermissionDefinition{
+					{Key: "perm.read", Bit: 0},
+					{Key: "perm.write", Bit: 1},
+				},
+				Roles: []openauth.RoleDefinition{
+					{Key: "viewer", Bit: 0, Permissions: []string{"perm.read"}},
+					{Key: "editor", Bit: 1, Permissions: []string{"perm.read", "perm.write"}},
+				},
+			},
+		},
 		Runtime: openauth.RuntimeConfig{
 			Storage: openauth.StorageConfig{
 				Backend: openauth.StorageBackendPostgres,
@@ -76,6 +92,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("create auth error: %v", err)
 	}
+
+	err = client.SetSubjectRoles(ctx, openauth.SetSubjectRolesInput{
+		Subject:  registeredUserID,
+		Tenant:   "example-tenant",
+		RoleKeys: []string{"viewer"},
+	})
+	if err != nil {
+		log.Fatalf("set subject roles error: %v", err)
+	}
 	log.Printf("registered user=%s with password auth", registeredUserID)
 
 	incomingUserID := registeredUserID
@@ -89,6 +114,16 @@ func main() {
 		log.Printf("authorization failed for user=%s", incomingUserID)
 		return
 	}
+
+	hasReadPermission, err := client.HasAllPermissions(principal, "perm.read")
+	if err != nil {
+		log.Fatalf("permission check failed: %v", err)
+	}
+	hasViewerRole, err := client.HasAnyRoles(principal, "viewer")
+	if err != nil {
+		log.Fatalf("role check failed: %v", err)
+	}
+	log.Printf("authorization checks: subject=%s has_read=%t has_viewer_role=%t", principal.Subject, hasReadPermission, hasViewerRole)
 
 	token, err := jwtManager.IssueToken(ctx, principal.Subject, session.Claims{
 		"tenant": principal.Tenant,
@@ -128,6 +163,20 @@ func main() {
 	if !sessionValid {
 		log.Fatalf("session was issued but is not valid")
 	}
+
+	protected := httptransport.RequireAnyRoleOrPermission(client, []string{"admin"}, []string{"perm.read"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req = req.WithContext(httptransport.WithPrincipal(req.Context(), principal))
+	rr := httptest.NewRecorder()
+	protected.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		log.Fatalf("protected middleware check failed with status=%d", rr.Code)
+	}
+	log.Printf("http authz middleware allowed subject=%s status=%d", principal.Subject, rr.Code)
 
 	log.Printf(
 		"principal subject=%s tenant=%s authenticated_at=%s approach=%s approach_subject=%s approach_tenant=%s approach_expires_at=%s",

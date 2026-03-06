@@ -18,8 +18,16 @@ This policy defines compatibility expectations for OpenAuth APIs, behaviors, and
 - `Authorize(ctx, AuthInput)`
 - `CreateAuth(ctx, CreateAuthInput)`
 - `ValidateToken(ctx, token)`
+- Root authorization checker currently includes:
+- role checks: `HasAllRoles`, `HasAnyRoles`, `RequireAllRoles`, `RequireAnyRoles`
+- permission checks: `HasAllPermissions`, `HasAnyPermissions`, `RequireAllPermissions`, `RequireAnyPermissions`
+- Client constructor currently uses:
+- `New(config, build)` where `build` returns `ClientDependencies{Authenticator, AuthorizationManager, AuthorizationChecker}`
+- `NewDefault(config)`
+- The previous `New(config, buildAuth)` constructor shape was removed as a pre-v1 breaking change.
+- Expanding `AuthorizationChecker` with role methods is a pre-v1 breaking surface update.
 - Input contracts are currently:
-- `AuthInput{UserID, Type, Value, Metadata}`
+- `AuthInput{UserID, Tenant, Type, Value, Metadata}`
 - `InputType` values: `password`, `token`
 - `CreateAuthInput{UserID, Value, ExpiresAt, Metadata}`
 - Any rename/removal/signature change to these is a breaking API change.

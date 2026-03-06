@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/porthorian/openauth/pkg/authz"
 	"github.com/porthorian/openauth/pkg/cache"
 )
 
@@ -57,12 +58,12 @@ func (a *Adapter) DeletePrincipal(ctx context.Context, key string) error {
 	return ErrNotImplemented
 }
 
-func (a *Adapter) SetPermissionMask(ctx context.Context, key string, permissionMask uint64, ttl time.Duration) error {
+func (a *Adapter) SetPermissionMask(ctx context.Context, key string, permissionMask authz.PermissionMask, ttl time.Duration) error {
 	return ErrNotImplemented
 }
 
-func (a *Adapter) GetPermissionMask(ctx context.Context, key string) (uint64, bool, error) {
-	return 0, false, ErrNotImplemented
+func (a *Adapter) GetPermissionMask(ctx context.Context, key string) (authz.PermissionMask, bool, error) {
+	return authz.PermissionMask{}, false, ErrNotImplemented
 }
 
 func (a *Adapter) DeletePermissionMask(ctx context.Context, key string) error {

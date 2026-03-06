@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/porthorian/openauth/pkg/authz"
 	"github.com/porthorian/openauth/pkg/cache"
 )
 
@@ -19,7 +20,7 @@ type principalEntry struct {
 }
 
 type permissionEntry struct {
-	mask    uint64
+	mask    authz.PermissionMask
 	expires time.Time
 }
 
@@ -102,7 +103,7 @@ func (a *Adapter) DeletePrincipal(ctx context.Context, key string) error {
 	return nil
 }
 
-func (a *Adapter) SetPermissionMask(ctx context.Context, key string, permissionMask uint64, ttl time.Duration) error {
+func (a *Adapter) SetPermissionMask(ctx context.Context, key string, permissionMask authz.PermissionMask, ttl time.Duration) error {
 	if err := validateSetInput(key, ttl); err != nil {
 		return err
 	}
@@ -116,21 +117,21 @@ func (a *Adapter) SetPermissionMask(ctx context.Context, key string, permissionM
 	return nil
 }
 
-func (a *Adapter) GetPermissionMask(ctx context.Context, key string) (uint64, bool, error) {
+func (a *Adapter) GetPermissionMask(ctx context.Context, key string) (authz.PermissionMask, bool, error) {
 	now := time.Now().UTC()
 
 	a.mu.RLock()
 	entry, ok := a.permissionEntries[key]
 	a.mu.RUnlock()
 	if !ok {
-		return 0, false, nil
+		return authz.PermissionMask{}, false, nil
 	}
 
 	if now.After(entry.expires) {
 		a.mu.Lock()
 		delete(a.permissionEntries, key)
 		a.mu.Unlock()
-		return 0, false, nil
+		return authz.PermissionMask{}, false, nil
 	}
 
 	return entry.mask, true, nil

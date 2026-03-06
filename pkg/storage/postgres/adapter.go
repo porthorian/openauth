@@ -25,14 +25,21 @@ type preparedStatements struct {
 	putAuthMetadata    *sql.Stmt
 	getAuthMetadata    *sql.Stmt
 
-	putAuthUser          *sql.Stmt
-	listAuthUserByUserID *sql.Stmt
-	listAuthUserByAuthID *sql.Stmt
-	deleteAuthUserByID   *sql.Stmt
+	putSubjectAuth           *sql.Stmt
+	listSubjectAuthBySubject *sql.Stmt
+	listSubjectAuthByAuthID  *sql.Stmt
+	deleteSubjectAuthByID    *sql.Stmt
 
-	putAuthEvent           *sql.Stmt
-	listAuthEventByAuthID  *sql.Stmt
-	listAuthEventBySubject *sql.Stmt
+	putAuthLog           *sql.Stmt
+	listAuthLogByAuthID  *sql.Stmt
+	listAuthLogBySubject *sql.Stmt
+
+	deleteSubjectRoles               *sql.Stmt
+	putSubjectRole                   *sql.Stmt
+	listSubjectRoles                 *sql.Stmt
+	deleteSubjectPermissionOverrides *sql.Stmt
+	putSubjectPermissionOverride     *sql.Stmt
+	listSubjectPermissionOverrides   *sql.Stmt
 
 	getAuthsMu     sync.Mutex
 	getAuthsBySize map[int]*sql.Stmt
@@ -88,52 +95,94 @@ var fixedPrepareStatementSpecs = []prepareStatementSpec{
 		},
 	},
 	{
-		label: "put auth user",
-		query: putAuthUserQuery,
+		label: "put subject auth",
+		query: putSubjectAuthQuery,
 		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
-			ps.putAuthUser = stmt
+			ps.putSubjectAuth = stmt
 		},
 	},
 	{
-		label: "list auth user by user_id",
-		query: listAuthUserByUserIDQuery,
+		label: "list subject auth by subject",
+		query: listSubjectAuthBySubjectQuery,
 		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
-			ps.listAuthUserByUserID = stmt
+			ps.listSubjectAuthBySubject = stmt
 		},
 	},
 	{
-		label: "list auth user by auth_id",
-		query: listAuthUserByAuthIDQuery,
+		label: "list subject auth by auth_id",
+		query: listSubjectAuthByAuthIDQuery,
 		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
-			ps.listAuthUserByAuthID = stmt
+			ps.listSubjectAuthByAuthID = stmt
 		},
 	},
 	{
-		label: "delete auth user by id",
-		query: deleteAuthUserQuery,
+		label: "delete subject auth by id",
+		query: deleteSubjectAuthQuery,
 		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
-			ps.deleteAuthUserByID = stmt
+			ps.deleteSubjectAuthByID = stmt
 		},
 	},
 	{
-		label: "put auth event",
-		query: putAuthEventQuery,
+		label: "put auth log",
+		query: putAuthLogQuery,
 		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
-			ps.putAuthEvent = stmt
+			ps.putAuthLog = stmt
 		},
 	},
 	{
-		label: "list auth event by auth_id",
-		query: listAuthEventByAuthIDQuery,
+		label: "list auth log by auth_id",
+		query: listAuthLogByAuthIDQuery,
 		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
-			ps.listAuthEventByAuthID = stmt
+			ps.listAuthLogByAuthID = stmt
 		},
 	},
 	{
-		label: "list auth event by subject",
-		query: listAuthEventBySubjectQuery,
+		label: "list auth log by subject",
+		query: listAuthLogBySubjectQuery,
 		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
-			ps.listAuthEventBySubject = stmt
+			ps.listAuthLogBySubject = stmt
+		},
+	},
+	{
+		label: "delete subject roles",
+		query: deleteSubjectRolesQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.deleteSubjectRoles = stmt
+		},
+	},
+	{
+		label: "put subject role",
+		query: putSubjectRoleQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.putSubjectRole = stmt
+		},
+	},
+	{
+		label: "list subject roles",
+		query: listSubjectRolesQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.listSubjectRoles = stmt
+		},
+	},
+	{
+		label: "delete subject permission overrides",
+		query: deleteSubjectPermissionOverridesQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.deleteSubjectPermissionOverrides = stmt
+		},
+	},
+	{
+		label: "put subject permission override",
+		query: putSubjectPermissionOverrideQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.putSubjectPermissionOverride = stmt
+		},
+	},
+	{
+		label: "list subject permission overrides",
+		query: listSubjectPermissionOverridesQuery,
+		assign: func(ps *preparedStatements, stmt *sql.Stmt) {
+			ps.listSubjectPermissionOverrides = stmt
 		},
 	},
 }
@@ -187,13 +236,19 @@ func (a *Adapter) Close() error {
 		a.stmts.deleteAuthMetadata,
 		a.stmts.putAuthMetadata,
 		a.stmts.getAuthMetadata,
-		a.stmts.putAuthUser,
-		a.stmts.listAuthUserByUserID,
-		a.stmts.listAuthUserByAuthID,
-		a.stmts.deleteAuthUserByID,
-		a.stmts.putAuthEvent,
-		a.stmts.listAuthEventByAuthID,
-		a.stmts.listAuthEventBySubject,
+		a.stmts.putSubjectAuth,
+		a.stmts.listSubjectAuthBySubject,
+		a.stmts.listSubjectAuthByAuthID,
+		a.stmts.deleteSubjectAuthByID,
+		a.stmts.putAuthLog,
+		a.stmts.listAuthLogByAuthID,
+		a.stmts.listAuthLogBySubject,
+		a.stmts.deleteSubjectRoles,
+		a.stmts.putSubjectRole,
+		a.stmts.listSubjectRoles,
+		a.stmts.deleteSubjectPermissionOverrides,
+		a.stmts.putSubjectPermissionOverride,
+		a.stmts.listSubjectPermissionOverrides,
 	); err != nil {
 		errs = append(errs, err)
 	}
@@ -252,10 +307,16 @@ func (a *Adapter) requirePreparedStatements() error {
 	if a.stmts.deleteAuthMetadata == nil || a.stmts.putAuthMetadata == nil || a.stmts.getAuthMetadata == nil {
 		return ErrAdapterNotInitialized
 	}
-	if a.stmts.putAuthUser == nil || a.stmts.listAuthUserByUserID == nil || a.stmts.listAuthUserByAuthID == nil || a.stmts.deleteAuthUserByID == nil {
+	if a.stmts.putSubjectAuth == nil || a.stmts.listSubjectAuthBySubject == nil || a.stmts.listSubjectAuthByAuthID == nil || a.stmts.deleteSubjectAuthByID == nil {
 		return ErrAdapterNotInitialized
 	}
-	if a.stmts.putAuthEvent == nil || a.stmts.listAuthEventByAuthID == nil || a.stmts.listAuthEventBySubject == nil {
+	if a.stmts.putAuthLog == nil || a.stmts.listAuthLogByAuthID == nil || a.stmts.listAuthLogBySubject == nil {
+		return ErrAdapterNotInitialized
+	}
+	if a.stmts.deleteSubjectRoles == nil || a.stmts.putSubjectRole == nil || a.stmts.listSubjectRoles == nil {
+		return ErrAdapterNotInitialized
+	}
+	if a.stmts.deleteSubjectPermissionOverrides == nil || a.stmts.putSubjectPermissionOverride == nil || a.stmts.listSubjectPermissionOverrides == nil {
 		return ErrAdapterNotInitialized
 	}
 

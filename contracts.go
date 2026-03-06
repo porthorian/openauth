@@ -2,19 +2,36 @@ package openauth
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
+	"github.com/porthorian/openauth/pkg/authz"
 	oerrors "github.com/porthorian/openauth/pkg/errors"
 	"github.com/porthorian/openauth/pkg/storage"
 )
 
 type Claims map[string]any
+type RoleMask = authz.RoleMask
+type PermissionMask = authz.PermissionMask
+type PermissionDefinition = authz.PermissionDefinition
+type RoleDefinition = authz.RoleDefinition
+
+type AuthorizationRegistry struct {
+	Permissions []PermissionDefinition
+	Roles       []RoleDefinition
+}
+
+type AuthorizationConfig struct {
+	Registry      AuthorizationRegistry
+	DefaultTenant string
+}
+
 type Principal struct {
-	Subject         string    // Use Subject as the canonical user/service identifier so policies, cache keys, and audit trails all map to one identity.
-	Tenant          string    // Use Tenant to enforce multi-tenant isolation so the same Subject can be scoped safely per customer/org boundary.
-	RoleMask        uint64    // Use RoleMask for fast role-based checks when you want coarse permissions (ex viewer/editor/admin) without repeated DB lookups.
-	PermissionMask  uint64    // Use PermissionMask for fine-grained action checks when direct grants/overrides must be enforced at request time.
+	Subject         string // Use Subject as the canonical user/service identifier so policies, cache keys, and audit trails all map to one identity.
+	Tenant          string // Use Tenant to enforce multi-tenant isolation so the same Subject can be scoped safely per customer/org boundary.
+	RoleMask        RoleMask
+	PermissionMask  PermissionMask
 	Claims          Claims    // Claims carries contextual identity attributes needed for policy evaluation and token enrichment.
 	AuthenticatedAt time.Time // AuthenticatedAt preserves auth time for freshness controls, TTL policies, and auditing.
 }
@@ -28,6 +45,7 @@ const (
 
 type AuthInput struct {
 	UserID   string
+	Tenant   string
 	Type     InputType
 	Value    string
 	Metadata map[string]string
@@ -44,6 +62,35 @@ type Authenticator interface {
 	Authorize(ctx context.Context, input AuthInput) (Principal, error)
 	CreateAuth(ctx context.Context, input CreateAuthInput) error
 	ValidateToken(ctx context.Context, token string) (Principal, error)
+}
+
+type SetSubjectRolesInput struct {
+	Subject  string
+	Tenant   string
+	RoleKeys []string
+}
+
+type SetSubjectPermissionOverridesInput struct {
+	Subject   string
+	Tenant    string
+	GrantKeys []string
+	DenyKeys  []string
+}
+
+type AuthorizationManager interface {
+	SetSubjectRoles(ctx context.Context, input SetSubjectRolesInput) error
+	SetSubjectPermissionOverrides(ctx context.Context, input SetSubjectPermissionOverridesInput) error
+}
+
+type AuthorizationChecker interface {
+	HasAllRoles(principal Principal, roleKeys ...string) (bool, error)
+	HasAnyRoles(principal Principal, roleKeys ...string) (bool, error)
+	RequireAllRoles(principal Principal, roleKeys ...string) error
+	RequireAnyRoles(principal Principal, roleKeys ...string) error
+	HasAllPermissions(principal Principal, permissionKeys ...string) (bool, error)
+	HasAnyPermissions(principal Principal, permissionKeys ...string) (bool, error)
+	RequireAllPermissions(principal Principal, permissionKeys ...string) error
+	RequireAnyPermissions(principal Principal, permissionKeys ...string) error
 }
 
 func (a InputType) GetMaterialType() storage.AuthMaterialType {
@@ -95,4 +142,67 @@ func (a CreateAuthInput) Validate() error {
 	}
 
 	return nil
+}
+
+func (input SetSubjectRolesInput) Normalize() SetSubjectRolesInput {
+	return SetSubjectRolesInput{
+		Subject:  strings.TrimSpace(input.Subject),
+		Tenant:   strings.TrimSpace(input.Tenant),
+		RoleKeys: normalizeStringKeys(input.RoleKeys),
+	}
+}
+
+func (input SetSubjectRolesInput) Validate() error {
+	if strings.TrimSpace(input.Subject) == "" {
+		return oerrors.New(oerrors.CodeInvalidCredentials, "subject is required")
+	}
+	return nil
+}
+
+func (input SetSubjectPermissionOverridesInput) Normalize() SetSubjectPermissionOverridesInput {
+	return SetSubjectPermissionOverridesInput{
+		Subject:   strings.TrimSpace(input.Subject),
+		Tenant:    strings.TrimSpace(input.Tenant),
+		GrantKeys: normalizeStringKeys(input.GrantKeys),
+		DenyKeys:  normalizeStringKeys(input.DenyKeys),
+	}
+}
+
+func (input SetSubjectPermissionOverridesInput) Validate() error {
+	if strings.TrimSpace(input.Subject) == "" {
+		return oerrors.New(oerrors.CodeInvalidCredentials, "subject is required")
+	}
+	return nil
+}
+
+func normalizeStringKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	dedup := make(map[string]struct{}, len(keys))
+	normalized := make([]string, 0, len(keys))
+	for _, key := range keys {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := dedup[trimmed]; exists {
+			continue
+		}
+		dedup[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
+func mapInputValidationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var typed *oerrors.Error
+	if errors.As(err, &typed) {
+		return err
+	}
+	return oerrors.Wrap(oerrors.CodeInvalidCredentials, "invalid input", err)
 }

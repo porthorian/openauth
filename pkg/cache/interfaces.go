@@ -3,13 +3,15 @@ package cache
 import (
 	"context"
 	"time"
+
+	"github.com/porthorian/openauth/pkg/authz"
 )
 
 type PrincipalSnapshot struct {
 	Subject        string
 	Tenant         string
-	RoleMask       uint64
-	PermissionMask uint64
+	RoleMask       authz.RoleMask
+	PermissionMask authz.PermissionMask
 	Claims         map[string]any
 	ExpiresAt      time.Time
 }
@@ -27,8 +29,8 @@ type PrincipalCache interface {
 }
 
 type PermissionCache interface {
-	SetPermissionMask(ctx context.Context, key string, permissionMask uint64, ttl time.Duration) error
-	GetPermissionMask(ctx context.Context, key string) (uint64, bool, error)
+	SetPermissionMask(ctx context.Context, key string, permissionMask authz.PermissionMask, ttl time.Duration) error
+	GetPermissionMask(ctx context.Context, key string) (authz.PermissionMask, bool, error)
 	DeletePermissionMask(ctx context.Context, key string) error
 }
 

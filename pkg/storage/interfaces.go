@@ -53,16 +53,24 @@ type SessionRecord struct {
 	Metadata  map[string]string
 }
 
-type RoleRecord struct {
-	Subject  string
-	Tenant   string
-	RoleMask uint64
+type SubjectRoleRecord struct {
+	Subject string
+	Tenant  string
+	RoleKey string
 }
 
-type PermissionRecord struct {
-	Subject        string
-	Tenant         string
-	PermissionMask uint64
+type PermissionEffect string
+
+const (
+	PermissionEffectGrant PermissionEffect = "grant"
+	PermissionEffectDeny  PermissionEffect = "deny"
+)
+
+type SubjectPermissionOverrideRecord struct {
+	Subject       string
+	Tenant        string
+	PermissionKey string
+	Effect        PermissionEffect
 }
 
 type AuthLogEvent string
@@ -108,15 +116,13 @@ type SessionStore interface {
 }
 
 type RoleStore interface {
-	PutRole(ctx context.Context, record RoleRecord) error
-	GetRole(ctx context.Context, subject string, tenant string) (RoleRecord, error)
-	DeleteRole(ctx context.Context, subject string, tenant string) error
+	ReplaceSubjectRoles(ctx context.Context, subject string, tenant string, roleKeys []string) error
+	ListSubjectRoles(ctx context.Context, subject string, tenant string) ([]SubjectRoleRecord, error)
 }
 
 type PermissionStore interface {
-	PutPermission(ctx context.Context, record PermissionRecord) error
-	GetPermission(ctx context.Context, subject string, tenant string) (PermissionRecord, error)
-	DeletePermission(ctx context.Context, subject string, tenant string) error
+	ReplaceSubjectPermissionOverrides(ctx context.Context, subject string, tenant string, overrides []SubjectPermissionOverrideRecord) error
+	ListSubjectPermissionOverrides(ctx context.Context, subject string, tenant string) ([]SubjectPermissionOverrideRecord, error)
 }
 
 type AuthLogStore interface {
