@@ -175,17 +175,6 @@ func (input SetSubjectPermissionOverridesInput) Validate() error {
 	return nil
 }
 
-type principalContextKey struct{}
-
-func WithPrincipal(ctx context.Context, principal Principal) context.Context {
-	return context.WithValue(ctx, principalContextKey{}, principal)
-}
-
-func GetPrincipal(ctx context.Context) (Principal, bool) {
-	principal, ok := ctx.Value(principalContextKey{}).(Principal)
-	return principal, ok
-}
-
 func normalizeStringKeys(keys []string) []string {
 	if len(keys) == 0 {
 		return nil
